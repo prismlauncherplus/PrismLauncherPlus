@@ -1045,6 +1045,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/CreateShortcutDialog.h
     ui/dialogs/CustomMessageBox.cpp
     ui/dialogs/CustomMessageBox.h
+    ui/dialogs/BulkRenameDialog.cpp
+    ui/dialogs/BulkRenameDialog.h
     ui/dialogs/ExportInstanceDialog.cpp
     ui/dialogs/ExportInstanceDialog.h
     ui/dialogs/ExportPackDialog.cpp

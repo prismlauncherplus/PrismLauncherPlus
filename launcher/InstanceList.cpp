@@ -125,9 +125,13 @@ QStringList InstanceList::mimeTypes() const
 QMimeData* InstanceList::mimeData(const QModelIndexList& indexes) const
 {
     auto* mimeData = QAbstractListModel::mimeData(indexes);
-    if (indexes.size() == 1) {
-        auto instanceId = data(indexes[0], InstanceIDRole).toString();
-        mimeData->setData("application/x-instanceid", instanceId.toUtf8());
+    // multiple instances are encoded as a newline separated list of ids
+    QStringList instanceIds;
+    for (const auto& index : indexes) {
+        instanceIds.append(data(index, InstanceIDRole).toString());
+    }
+    if (!instanceIds.isEmpty()) {
+        mimeData->setData("application/x-instanceid", instanceIds.join('\n').toUtf8());
     }
     return mimeData;
 }
@@ -332,6 +336,28 @@ bool InstanceList::isGroupCollapsed(const QString& group)
 
 bool InstanceList::trashInstance(const InstanceId& id)
 {
+    QList<TrashHistoryItem> batch;
+    if (!trashInstanceInto(id, batch))
+        return false;
+    m_trashHistory.push(batch);
+    return true;
+}
+
+QStringList InstanceList::trashInstances(const QStringList& ids)
+{
+    QStringList failed;
+    QList<TrashHistoryItem> batch;
+    for (const auto& id : ids) {
+        if (!trashInstanceInto(id, batch))
+            failed.append(id);
+    }
+    if (!batch.isEmpty())
+        m_trashHistory.push(batch);
+    return failed;
+}
+
+bool InstanceList::trashInstanceInto(const InstanceId& id, QList<TrashHistoryItem>& batch)
+{
     auto* inst = getInstanceById(id);
     if (!inst) {
         qWarning() << "Cannot trash instance" << id << ". No such instance is present (deleted externally?).";
@@ -354,7 +380,8 @@ bool InstanceList::trashInstance(const InstanceId& id)
     }
 
     qDebug() << "Instance" << id << "has been trashed by the launcher.";
-    m_trashHistory.push({ id, inst->instanceRoot(), trashedLoc, cachedGroupId });
+    batch.append({ id, inst->instanceRoot(), trashedLoc, cachedGroupId, {} });
+    auto& item = batch.last();
 
     // Also trash all of its shortcuts; we remove the shortcuts if trash fails since it is invalid anyway
     for (const auto& [name, filePath, target] : inst->shortcuts()) {
@@ -370,7 +397,7 @@ bool InstanceList::trashInstance(const InstanceId& id)
             continue;
         }
         qDebug() << "Shortcut" << name << "at path" << filePath << "for instance" << id << "has been trashed by the launcher.";
-        m_trashHistory.top().shortcuts.append({ { name, filePath, target }, trashedLoc });
+        item.shortcuts.append({ { name, filePath, target }, trashedLoc });
     }
 
     return true;
@@ -388,37 +415,40 @@ bool InstanceList::undoTrashInstance()
         return true;
     }
 
-    auto top = m_trashHistory.pop();
-
-    while (QDir(top.path).exists()) {
-        top.id += "1";
-        top.path += "1";
-    }
-
-    if (!QFile(top.trashPath).rename(top.path)) {
-        qWarning() << "Moving" << top.trashPath << "back to" << top.path << "failed!";
-        return false;
-    }
-    qDebug() << "Moving" << top.trashPath << "back to" << top.path;
+    auto batch = m_trashHistory.pop();
 
     bool ok = true;
-    for (const auto& [data, trashPath] : top.shortcuts) {
-        if (QDir(data.filePath).exists()) {
-            // Don't try to append 1 here as the shortcut may have suffixes like .app, just warn and skip it
-            qWarning() << "Shortcut" << trashPath << "original directory" << data.filePath << "already exists!";
-            ok = false;
-            continue;
+    for (auto& top : batch) {
+        while (QDir(top.path).exists()) {
+            top.id += "1";
+            top.path += "1";
         }
-        if (!QFile(trashPath).rename(data.filePath)) {
-            qWarning() << "Moving shortcut from" << trashPath << "back to" << data.filePath << "failed!";
-            ok = false;
-            continue;
-        }
-        qDebug() << "Moving shortcut from" << trashPath << "back to" << data.filePath;
-    }
 
-    m_instanceGroupIndex[top.id] = top.groupName;
-    increaseGroupCount(top.groupName);
+        if (!QFile(top.trashPath).rename(top.path)) {
+            qWarning() << "Moving" << top.trashPath << "back to" << top.path << "failed!";
+            ok = false;
+            continue;
+        }
+        qDebug() << "Moving" << top.trashPath << "back to" << top.path;
+
+        for (const auto& [data, trashPath] : top.shortcuts) {
+            if (QDir(data.filePath).exists()) {
+                // Don't try to append 1 here as the shortcut may have suffixes like .app, just warn and skip it
+                qWarning() << "Shortcut" << trashPath << "original directory" << data.filePath << "already exists!";
+                ok = false;
+                continue;
+            }
+            if (!QFile(trashPath).rename(data.filePath)) {
+                qWarning() << "Moving shortcut from" << trashPath << "back to" << data.filePath << "failed!";
+                ok = false;
+                continue;
+            }
+            qDebug() << "Moving shortcut from" << trashPath << "back to" << data.filePath;
+        }
+
+        m_instanceGroupIndex[top.id] = top.groupName;
+        increaseGroupCount(top.groupName);
+    }
 
     saveGroupList();
     emit instancesChanged();

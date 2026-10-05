@@ -45,7 +45,9 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPersistentModelIndex>
+#include <QRubberBand>
 #include <QScrollBar>
+#include <QStyleOptionRubberBand>
 #include <QtMath>
 
 #include "VisualGroup.h"
@@ -122,6 +124,10 @@ void InstanceView::rowsRemoved()
 void InstanceView::currentChanged(const QModelIndex& current, const QModelIndex& previous)
 {
     QAbstractItemView::currentChanged(current, previous);
+    // shift extends the selection from the anchor, so the anchor has to stay where it is
+    if (!(QApplication::keyboardModifiers() & Qt::ShiftModifier)) {
+        m_selectionAnchor = current;
+    }
     // TODO: for accessibility support, implement+register a factory, steal QAccessibleTable from Qt and return an instance of it for
     // InstanceView.
 #ifndef QT_NO_ACCESSIBILITY
@@ -303,11 +309,30 @@ void InstanceView::mousePressEvent(QMouseEvent* event)
         // when the user is interacting with it (ie. clicking on it)
         bool autoScroll = hasAutoScroll();
         setAutoScroll(false);
+        QPersistentModelIndex anchor = m_selectionAnchor;
         selectionModel()->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
-
         setAutoScroll(autoScroll);
-        QRect rect(visualPos, visualPos);
-        setSelection(rect, QItemSelectionModel::ClearAndSelect);
+
+        m_selectOnlyPressedOnRelease = false;
+        const auto modifiers = event->modifiers();
+        if (selectionMode() != ExtendedSelection) {
+            selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+        } else if (modifiers & Qt::ShiftModifier) {
+            auto command = (modifiers & Qt::ControlModifier) ? QItemSelectionModel::Select : QItemSelectionModel::ClearAndSelect;
+            selectRange(anchor.isValid() ? QModelIndex(anchor) : QModelIndex(index), index, command);
+        } else if (modifiers & Qt::ControlModifier) {
+            if (event->button() == Qt::LeftButton) {
+                toggleSelected(index);
+            } else if (!m_pressedAlreadySelected) {
+                selectionModel()->select(index, QItemSelectionModel::Select);
+            }
+        } else if (m_pressedAlreadySelected) {
+            // keep the selection, so it can be dragged around or used by the context menu.
+            // a plain click (without dragging) still ends up selecting only the clicked item
+            m_selectOnlyPressedOnRelease = event->button() == Qt::LeftButton;
+        } else {
+            selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+        }
 
         // signal handlers may change the model
         emit pressed(index);
@@ -351,6 +376,20 @@ void InstanceView::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
+    if ((event->buttons() & Qt::LeftButton) && selectionModel() && selectionMode() == ExtendedSelection) {
+        if (state() != DragSelectingState) {
+            if ((m_pressedPosition - geometryPos).manhattanLength() < QApplication::startDragDistance()) {
+                return;
+            }
+            setState(DragSelectingState);
+            // holding ctrl adds to the existing selection instead of replacing it
+            m_selectionBeforeRubberBand = (event->modifiers() & Qt::ControlModifier) ? selectionModel()->selection() : QItemSelection();
+        }
+        m_rubberBand = QRect(m_pressedPosition, geometryPos).normalized();
+        updateRubberBandSelection();
+        return;
+    }
+
     if ((event->buttons() & Qt::LeftButton) && selectionModel()) {
         setState(DragSelectingState);
 
@@ -390,6 +429,7 @@ void InstanceView::mouseReleaseEvent(QMouseEvent* event)
             emit groupStateChanged(m_pressedCategory->text, true);
 
             updateGeometries();
+            deselectHiddenItems();
             viewport()->update();
             event->accept();
             m_pressedCategory = nullptr;
@@ -401,6 +441,20 @@ void InstanceView::mouseReleaseEvent(QMouseEvent* event)
     m_ctrlDragSelectionFlag = QItemSelectionModel::NoUpdate;
 
     setState(NoState);
+
+    if (!m_rubberBand.isNull()) {
+        m_rubberBand = QRect();
+        m_selectionBeforeRubberBand = QItemSelection();
+        viewport()->update();
+    }
+
+    if (m_selectOnlyPressedOnRelease) {
+        m_selectOnlyPressedOnRelease = false;
+        // the pressed index is cleared when a drag starts, so this only happens on a plain click
+        if (index == m_pressedIndex && index.isValid()) {
+            selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+        }
+    }
 
     if (index == m_pressedIndex && index.isValid()) {
         if (event->button() == Qt::LeftButton) {
@@ -544,6 +598,17 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
         itemDelegate()->paint(&painter, option, index);
     }
 
+    if (!m_rubberBand.isNull()) {
+        QStyleOptionRubberBand rubberBandOption;
+        rubberBandOption.initFrom(this);
+        rubberBandOption.shape = QRubberBand::Rectangle;
+        rubberBandOption.opaque = false;
+        rubberBandOption.rect = m_rubberBand.translated(-offset());
+        painter.save();
+        style()->drawControl(QStyle::CE_RubberBand, &rubberBandOption, &painter);
+        painter.restore();
+    }
+
     /*
      * Drop indicators for manual reordering...
      */
@@ -641,9 +706,11 @@ void InstanceView::dropEvent(QDropEvent* event)
                 viewport()->update();
                 return;
             }
-            auto instanceId = QString::fromUtf8(mimedata->data("application/x-instanceid"));
+            auto instanceIds = QString::fromUtf8(mimedata->data("application/x-instanceid")).split('\n', Qt::SkipEmptyParts);
             auto instanceList = APPLICATION->instances();
-            instanceList->setInstanceGroup(instanceId, group->text);
+            for (const auto& instanceId : instanceIds) {
+                instanceList->setInstanceGroup(instanceId, group->text);
+            }
             event->setDropAction(Qt::MoveAction);
             event->accept();
 
@@ -745,14 +812,191 @@ void InstanceView::setSelection(const QRect& rect, const QItemSelectionModel::Se
 {
     executeDelayedItemsLayout();
 
+    QItemSelection selection;
     for (int i = 0; i < model()->rowCount(); ++i) {
         QModelIndex index = model()->index(i, 0);
         QRect itemRect = visualRect(index);
         if (itemRect.intersects(rect)) {
-            selectionModel()->select(index, commands);
-            update(itemRect.translated(-offset()));
+            selection.select(index, index);
         }
     }
+    // select everything at once, a Clear or Current flag would otherwise only leave the last item selected
+    selectionModel()->select(selection, commands);
+    viewport()->update();
+}
+
+QModelIndexList InstanceView::visibleIndexesInOrder() const
+{
+    const_cast<InstanceView*>(this)->executeDelayedItemsLayout();
+
+    QModelIndexList indexes;
+    for (auto* group : m_groups) {
+        if (group->collapsed) {
+            continue;
+        }
+        for (const auto& row : group->rows) {
+            indexes.append(row.items);
+        }
+    }
+    return indexes;
+}
+
+void InstanceView::selectAll()
+{
+    if (selectionMode() != ExtendedSelection || !selectionModel()) {
+        return;
+    }
+    // only select what is visible, so instances in collapsed groups are not affected by bulk actions by accident
+    const auto indexes = visibleIndexesInOrder();
+    QItemSelection selection;
+    for (const auto& index : indexes) {
+        selection.select(index, index);
+    }
+    selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+    if (!indexes.isEmpty() && !selectionModel()->isSelected(currentIndex())) {
+        selectionModel()->setCurrentIndex(indexes.first(), QItemSelectionModel::NoUpdate);
+    }
+    viewport()->update();
+}
+
+void InstanceView::selectRange(const QModelIndex& from, const QModelIndex& to, QItemSelectionModel::SelectionFlags command)
+{
+    const auto indexes = visibleIndexesInOrder();
+    qsizetype start = indexes.indexOf(from);
+    qsizetype end = indexes.indexOf(to);
+    if (start < 0 || end < 0) {
+        selectionModel()->select(to, command);
+        return;
+    }
+    if (start > end) {
+        std::swap(start, end);
+    }
+    QItemSelection selection;
+    for (auto i = start; i <= end; ++i) {
+        selection.select(indexes[i], indexes[i]);
+    }
+    selectionModel()->select(selection, command);
+    viewport()->update();
+}
+
+void InstanceView::toggleSelected(const QModelIndex& index)
+{
+    if (!selectionModel()->isSelected(index)) {
+        selectionModel()->select(index, QItemSelectionModel::Select);
+        return;
+    }
+    auto selected = selectionModel()->selectedIndexes();
+    // never deselect the last selected item
+    if (selected.size() <= 1) {
+        return;
+    }
+    selectionModel()->select(index, QItemSelectionModel::Deselect);
+    // keep the current item inside the selection
+    selected.removeAll(index);
+    selectionModel()->setCurrentIndex(selected.last(), QItemSelectionModel::NoUpdate);
+}
+
+void InstanceView::updateRubberBandSelection()
+{
+    QItemSelection band;
+    QModelIndex first;
+    for (const auto& index : visibleIndexesInOrder()) {
+        if (geometryRect(index).intersects(m_rubberBand)) {
+            band.select(index, index);
+            if (!first.isValid()) {
+                first = index;
+            }
+        }
+    }
+    QItemSelection selection = m_selectionBeforeRubberBand;
+    selection.merge(band, QItemSelectionModel::Select);
+    selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+    if (first.isValid() && !selectionModel()->isSelected(currentIndex())) {
+        selectionModel()->setCurrentIndex(first, QItemSelectionModel::NoUpdate);
+    }
+    viewport()->update();
+}
+
+void InstanceView::deselectHiddenItems()
+{
+    const auto selected = selectionModel()->selectedIndexes();
+    if (selectionMode() != ExtendedSelection || selected.size() <= 1) {
+        return;
+    }
+    QItemSelection hidden;
+    for (const auto& index : selected) {
+        if (isIndexHidden(index)) {
+            hidden.select(index, index);
+        }
+    }
+    if (hidden.isEmpty()) {
+        return;
+    }
+    selectionModel()->select(hidden, QItemSelectionModel::Deselect);
+    const auto remaining = selectionModel()->selectedIndexes();
+    if (remaining.isEmpty()) {
+        // everything selected was collapsed, keep the current item selected like with a single selection
+        selectionModel()->select(currentIndex(), QItemSelectionModel::Select);
+    } else if (!selectionModel()->isSelected(currentIndex())) {
+        selectionModel()->setCurrentIndex(remaining.first(), QItemSelectionModel::NoUpdate);
+    }
+}
+
+void InstanceView::keyboardSearch(const QString& search)
+{
+    QModelIndex previous = currentIndex();
+    QAbstractItemView::keyboardSearch(search);
+    // with multi-selection Qt only moves the current item, but jumping to an instance should select it
+    if (selectionMode() == ExtendedSelection && currentIndex().isValid() && currentIndex() != previous) {
+        selectionModel()->select(currentIndex(), QItemSelectionModel::ClearAndSelect);
+    }
+}
+
+void InstanceView::keyPressEvent(QKeyEvent* event)
+{
+    if (selectionMode() != ExtendedSelection || state() == EditingState) {
+        QAbstractItemView::keyPressEvent(event);
+        return;
+    }
+
+    CursorAction action;
+    switch (event->key()) {
+        case Qt::Key_Up:
+            action = MoveUp;
+            break;
+        case Qt::Key_Down:
+            action = MoveDown;
+            break;
+        case Qt::Key_Left:
+            action = MoveLeft;
+            break;
+        case Qt::Key_Right:
+            action = MoveRight;
+            break;
+        case Qt::Key_Home:
+            action = MoveHome;
+            break;
+        case Qt::Key_End:
+            action = MoveEnd;
+            break;
+        default:
+            QAbstractItemView::keyPressEvent(event);
+            return;
+    }
+
+    // handle movement ourselves so that shift extends the selection in display order (and not as a rectangle)
+    QPersistentModelIndex anchor = m_selectionAnchor;
+    QModelIndex next = moveCursor(action, event->modifiers());
+    if (next.isValid()) {
+        selectionModel()->setCurrentIndex(next, QItemSelectionModel::NoUpdate);
+        if ((event->modifiers() & Qt::ShiftModifier) && anchor.isValid()) {
+            selectRange(anchor, next, QItemSelectionModel::ClearAndSelect);
+        } else {
+            selectionModel()->select(next, QItemSelectionModel::ClearAndSelect);
+        }
+        scrollTo(next);
+    }
+    event->accept();
 }
 
 QPixmap InstanceView::renderToPixmap(const QModelIndexList& indices, QRect* r) const

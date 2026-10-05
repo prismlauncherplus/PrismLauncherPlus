@@ -74,14 +74,19 @@ class InstanceView : public QAbstractItemView {
     virtual void scrollTo(const QModelIndex& index, ScrollHint hint = EnsureVisible) override;
 
     virtual QModelIndex moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers) override;
+    void keyboardSearch(const QString& search) override;
 
     virtual QRegion visualRegionForSelection(const QItemSelection& selection) const override;
 
     int spacing() const { return m_spacing; };
     void setPaintCat(bool visible);
 
+    /// all items that are not hidden in collapsed groups, in the order they are displayed
+    QModelIndexList visibleIndexesInOrder() const;
+
    public slots:
     virtual void updateGeometries() override;
+    void selectAll() override;
 
    protected slots:
     virtual void dataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QList<int>& roles) override;
@@ -97,6 +102,7 @@ class InstanceView : public QAbstractItemView {
 
    protected:
     bool isIndexHidden(const QModelIndex& index) const override;
+    void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -139,6 +145,12 @@ class InstanceView : public QAbstractItemView {
     QItemSelectionModel::SelectionFlag m_ctrlDragSelectionFlag;
     QPoint m_lastDragPosition;
 
+    // multi-selection state
+    QPersistentModelIndex m_selectionAnchor;
+    bool m_selectOnlyPressedOnRelease = false;
+    QRect m_rubberBand;  // in geometry coordinates
+    QItemSelection m_selectionBeforeRubberBand;
+
     VisualGroup* category(const QModelIndex& index) const;
     VisualGroup* category(const QString& cat) const;
     VisualGroup* categoryAt(const QPoint& pos, VisualGroup::HitResults& result) const;
@@ -158,4 +170,9 @@ class InstanceView : public QAbstractItemView {
     std::pair<VisualGroup*, VisualGroup::HitResults> rowDropPos(const QPoint& pos);
 
     QPoint offset() const;
+
+    void selectRange(const QModelIndex& from, const QModelIndex& to, QItemSelectionModel::SelectionFlags command);
+    void toggleSelected(const QModelIndex& index);
+    void updateRubberBandSelection();
+    void deselectHiddenItems();
 };

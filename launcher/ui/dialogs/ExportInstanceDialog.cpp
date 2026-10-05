@@ -59,6 +59,24 @@
 #include <functional>
 #include "Application.h"
 #include "SeparatorPrefixTree.h"
+#include "tasks/ConcurrentTask.h"
+
+namespace {
+QString ignoreFileNameFor(BaseInstance* instance)
+{
+    return FS::PathCombine(instance->instanceRoot(), ".packignore");
+}
+
+void setupDefaultIgnores(FileIgnoreProxy* proxy, BaseInstance* instance)
+{
+    auto prefix = QDir(instance->instanceRoot()).relativeFilePath(instance->gameRoot());
+    for (auto path : { "logs", "crash-reports", ".cache", ".fabric", ".quilt" }) {
+        proxy->ignoreFilesWithPath().insert(FS::PathCombine(prefix, path));
+    }
+    proxy->ignoreFilesWithName().append({ ".DS_Store", "thumbs.db", "Thumbs.db" });
+    proxy->loadBlockedPathsFromFile(ignoreFileNameFor(instance));
+}
+}  // namespace
 
 ExportInstanceDialog::ExportInstanceDialog(BaseInstance* instance, QWidget* parent)
     : QDialog(parent), m_ui(new Ui::ExportInstanceDialog), m_instance(instance)
@@ -69,12 +87,7 @@ ExportInstanceDialog::ExportInstanceDialog(BaseInstance* instance, QWidget* pare
     auto root = instance->instanceRoot();
     m_proxyModel = new FileIgnoreProxy(root, this);
     m_proxyModel->setSourceModel(model);
-    auto prefix = QDir(instance->instanceRoot()).relativeFilePath(instance->gameRoot());
-    for (auto path : { "logs", "crash-reports", ".cache", ".fabric", ".quilt" }) {
-        m_proxyModel->ignoreFilesWithPath().insert(FS::PathCombine(prefix, path));
-    }
-    m_proxyModel->ignoreFilesWithName().append({ ".DS_Store", "thumbs.db", "Thumbs.db" });
-    m_proxyModel->loadBlockedPathsFromFile(ignoreFileName());
+    setupDefaultIgnores(m_proxyModel, instance);
 
     m_ui->treeView->setModel(m_proxyModel);
     m_ui->treeView->setRootIndex(m_proxyModel->mapFromSource(model->index(root)));
@@ -190,5 +203,77 @@ void ExportInstanceDialog::rowsInserted(QModelIndex parent, int top, int bottom)
 
 QString ExportInstanceDialog::ignoreFileName()
 {
-    return FS::PathCombine(m_instance->instanceRoot(), ".packignore");
+    return ignoreFileNameFor(m_instance);
+}
+
+void exportInstancesToZips(const QList<BaseInstance*>& instances, QWidget* parent)
+{
+    if (instances.isEmpty())
+        return;
+
+    const QString outputDir = QFileDialog::getExistingDirectory(
+        parent, QObject::tr("Export %n instance(s) to", nullptr, static_cast<int>(instances.size())), QDir::homePath());
+    if (outputDir.isEmpty())
+        return;
+
+    // pick a unique output file for every instance, so that instances with the same name don't overwrite each other
+    QSet<QString> usedPaths;
+    QStringList existing;
+    QList<std::pair<BaseInstance*, QString>> outputs;
+    for (auto* instance : instances) {
+        auto baseName = FS::RemoveInvalidFilenameChars(instance->name());
+        auto output = FS::PathCombine(outputDir, baseName + ".zip");
+        for (int i = 2; usedPaths.contains(output); i++) {
+            output = FS::PathCombine(outputDir, QString("%1 (%2).zip").arg(baseName).arg(i));
+        }
+        usedPaths.insert(output);
+        if (QFileInfo::exists(output))
+            existing.append(QFileInfo(output).fileName());
+        outputs.append({ instance, output });
+    }
+
+    if (!existing.isEmpty()) {
+        auto response = CustomMessageBox::selectable(parent, QObject::tr("Overwrite files?"),
+                                                     QObject::tr("The following files already exist and will be overwritten:\n\n%1\n\n"
+                                                                 "Do you want to continue?")
+                                                         .arg(existing.join('\n')),
+                                                     QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                            ->exec();
+        if (response != QMessageBox::Yes)
+            return;
+    }
+
+    auto task = makeShared<ConcurrentTask>(QObject::tr("Exporting instances"), 1);
+    QStringList collectFailures;
+    for (const auto& [instance, output] : outputs) {
+        SaveIcon(instance);
+
+        FileIgnoreProxy proxy(instance->instanceRoot(), nullptr);
+        setupDefaultIgnores(&proxy, instance);
+
+        auto files = QFileInfoList();
+        if (!MMCZip::collectFileListRecursively(instance->instanceRoot(), nullptr, &files,
+                                                std::bind(&FileIgnoreProxy::filterFile, &proxy, std::placeholders::_1))) {
+            collectFailures.append(instance->name());
+            continue;
+        }
+        task->addTask(makeShared<MMCZip::ExportToZipTask>(output, instance->instanceRoot(), files, "", true));
+    }
+
+    if (!collectFailures.isEmpty()) {
+        CustomMessageBox::selectable(parent, QObject::tr("Error"),
+                                     QObject::tr("Unable to export the following instance(s):\n\n%1").arg(collectFailures.join('\n')),
+                                     QMessageBox::Critical)
+            ->show();
+        if (collectFailures.size() == outputs.size())
+            return;
+    }
+
+    QObject::connect(task.get(), &Task::failed, parent, [parent](QString reason) {
+        CustomMessageBox::selectable(parent, QObject::tr("Error"), reason, QMessageBox::Critical)->show();
+    });
+
+    ProgressDialog progress(parent);
+    progress.showSkipButton();
+    progress.execWithTask(task.get());
 }

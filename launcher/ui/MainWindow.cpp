@@ -95,6 +95,7 @@
 #include "ui/GuiUtil.h"
 #include "ui/ViewLogWindow.h"
 #include "ui/dialogs/AboutDialog.h"
+#include "ui/dialogs/BulkRenameDialog.h"
 #include "ui/dialogs/CopyInstanceDialog.h"
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
@@ -284,7 +285,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     {
         view = new InstanceView(ui->centralWidget);
 
-        view->setSelectionMode(QAbstractItemView::SingleSelection);
+        view->setSelectionMode(QAbstractItemView::ExtendedSelection);
         // FIXME: leaks ListViewDelegate
         auto delegate = new ListViewDelegate(this);
         view->setItemDelegate(delegate);
@@ -353,6 +354,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // track the selection -- update the instance toolbar
     connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, &MainWindow::instanceChanged);
+    connect(view->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::updateSelectedInstance);
 
     // track icon changes and update the toolbar!
     connect(APPLICATION->icons(), &IconList::iconUpdated, this, &MainWindow::iconUpdated);
@@ -438,7 +440,9 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
 
 void MainWindow::retranslateUi()
 {
-    if (m_selectedInstance) {
+    if (int count = view ? view->selectionModel()->selectedIndexes().size() : 0; count > 1) {
+        m_statusLeft->setText(tr("%n instance(s) selected", nullptr, count));
+    } else if (m_selectedInstance) {
         m_statusLeft->setText(m_selectedInstance->getStatusbarDescription());
     } else {
         m_statusLeft->setText(tr("No instance selected"));
@@ -522,7 +526,7 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
     QAction* actionSep = new QAction("", this);
     actionSep->setSeparator(true);
 
-    bool onInstance = view->indexAt(pos).isValid();
+    bool onInstance = view->indexAt(pos).isValid() && m_selectedInstance;
     if (onInstance) {
         // reuse the file menu actions
         actions = ui->fileMenu->actions();
@@ -537,7 +541,9 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
 
         // add header
         actions.prepend(actionSep);
-        QAction* actionVoid = new QAction(m_selectedInstance->name(), this);
+        int selectedCount = selectedInstances().size();
+        QAction* actionVoid =
+            new QAction(selectedCount > 1 ? tr("%n instance(s) selected", nullptr, selectedCount) : m_selectedInstance->name(), this);
         actionVoid->setEnabled(false);
         actions.prepend(actionVoid);
     } else {
@@ -880,7 +886,7 @@ void MainWindow::instanceFromInstanceTask(InstanceTask* rawTask)
 
 void MainWindow::on_actionCopyInstance_triggered()
 {
-    if (!m_selectedInstance)
+    if (!m_selectedInstance || isBulkSelection())
         return;
 
     CopyInstanceDialog copyInstDlg(m_selectedInstance, this);
@@ -1215,13 +1221,16 @@ void MainWindow::on_actionMATRIX_triggered()
 
 void MainWindow::on_actionChangeInstIcon_triggered()
 {
-    if (!m_selectedInstance)
+    const auto instances = selectedInstances();
+    if (!m_selectedInstance || instances.isEmpty())
         return;
 
     IconPickerDialog dlg(this);
     dlg.execWithSelection(m_selectedInstance->iconKey());
     if (dlg.result() == QDialog::Accepted) {
-        m_selectedInstance->setIconKey(dlg.selectedIconKey);
+        for (auto* instance : instances) {
+            instance->setIconKey(dlg.selectedIconKey);
+        }
         auto icon = APPLICATION->icons()->getIcon(dlg.selectedIconKey);
         ui->actionChangeInstIcon->setIcon(icon);
         changeIconButton->setIcon(icon);
@@ -1257,23 +1266,79 @@ void MainWindow::setSelectedInstanceById(const QString& id)
     }
 }
 
+void MainWindow::setSelectedInstancesByIds(const QStringList& ids)
+{
+    QItemSelection selection;
+    QModelIndex first;
+    for (const auto& id : ids) {
+        const QModelIndex index = proxymodel->mapFromSource(APPLICATION->instances()->getInstanceIndexById(id));
+        if (index.isValid()) {
+            selection.select(index, index);
+            if (!first.isValid())
+                first = index;
+        }
+    }
+    if (!first.isValid())
+        return;
+    view->selectionModel()->setCurrentIndex(first, QItemSelectionModel::NoUpdate);
+    view->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+}
+
+QList<MinecraftInstance*> MainWindow::selectedInstances() const
+{
+    const auto selected = view->selectionModel()->selectedIndexes();
+    QModelIndexList ordered;
+    for (const auto& index : view->visibleIndexesInOrder()) {
+        if (selected.contains(index))
+            ordered.append(index);
+    }
+    // selected instances in collapsed groups go last
+    for (const auto& index : selected) {
+        if (!ordered.contains(index))
+            ordered.append(index);
+    }
+
+    QList<MinecraftInstance*> instances;
+    for (const auto& index : ordered) {
+        if (auto* instance = APPLICATION->instances()->getInstanceById(index.data(InstanceList::InstanceIDRole).toString()))
+            instances.append(instance);
+    }
+    return instances;
+}
+
+bool MainWindow::isBulkSelection() const
+{
+    return view->selectionModel()->selectedIndexes().size() > 1;
+}
+
 void MainWindow::on_actionChangeInstGroup_triggered()
 {
-    if (!m_selectedInstance)
+    const auto instances = selectedInstances();
+    if (instances.isEmpty())
         return;
 
-    InstanceId instId = m_selectedInstance->id();
-    QString src(APPLICATION->instances()->getInstanceGroup(instId));
+    // only preselect a group if all the instances share it
+    QString src(APPLICATION->instances()->getInstanceGroup(instances.first()->id()));
+    for (auto* instance : instances) {
+        if (APPLICATION->instances()->getInstanceGroup(instance->id()) != src) {
+            src = QString();
+            break;
+        }
+    }
 
     QStringList groups = APPLICATION->instances()->getGroups();
     groups.prepend("");
     int index = groups.indexOf(src);
     bool ok = false;
-    QString dst = QInputDialog::getItem(this, tr("Group name"), tr("Enter a new group name."), groups, index, true, &ok);
+    QString label = instances.size() > 1 ? tr("Enter a new group name for %n instance(s).", nullptr, static_cast<int>(instances.size()))
+                                         : tr("Enter a new group name.");
+    QString dst = QInputDialog::getItem(this, tr("Group name"), label, groups, index, true, &ok);
     dst = dst.simplified();
 
     if (ok) {
-        APPLICATION->instances()->setInstanceGroup(instId, dst);
+        for (auto* instance : instances) {
+            APPLICATION->instances()->setInstanceGroup(instance->id(), dst);
+        }
     }
 }
 
@@ -1403,7 +1468,8 @@ void MainWindow::globalSettingsClosed()
 
 void MainWindow::on_actionEditInstance_triggered()
 {
-    if (!m_selectedInstance)
+    // settings can only be edited for one instance at a time
+    if (!m_selectedInstance || isBulkSelection())
         return;
 
     if (m_selectedInstance->canEdit()) {
@@ -1509,6 +1575,10 @@ void MainWindow::on_actionDeleteInstance_triggered()
     if (!m_selectedInstance) {
         return;
     }
+    if (const auto instances = selectedInstances(); instances.size() > 1) {
+        bulkDeleteInstances(instances);
+        return;
+    }
 
     if (m_selectedInstance->isRunning()) {
         CustomMessageBox::selectable(this, tr("Cannot Delete Running Instance"),
@@ -1547,8 +1617,83 @@ void MainWindow::on_actionDeleteInstance_triggered()
     selectionBad();
 }
 
+void MainWindow::bulkDeleteInstances(const QList<MinecraftInstance*>& instances)
+{
+    QStringList ids;
+    QStringList names;
+    QStringList running;
+    int shortcutCount = 0;
+    for (auto* instance : instances) {
+        ids.append(instance->id());
+        names.append(instance->name());
+        shortcutCount += instance->shortcuts().size();
+        if (instance->isRunning())
+            running.append(instance->name());
+    }
+
+    if (!running.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("Cannot Delete Running Instances"),
+                                     tr("The following instances are currently running and cannot be deleted:\n\n%1\n\n"
+                                        "Please stop them before attempting to delete them.")
+                                         .arg(running.join('\n')),
+                                     QMessageBox::Warning, QMessageBox::Ok)
+            ->exec();
+        return;
+    }
+
+    QString shortcutStr;
+    if (shortcutCount > 0)
+        shortcutStr = tr("\nTheir %n registered shortcut(s) will be deleted as well.", "", shortcutCount);
+    auto response = CustomMessageBox::selectable(this, tr("Confirm Deletion"),
+                                                 tr("You are about to delete %n instance(s):\n\n%1\n%2\n"
+                                                    "This may be permanent and will completely delete the instances.\n\n"
+                                                    "Are you sure?",
+                                                    "", static_cast<int>(instances.size()))
+                                                     .arg(names.join('\n'), shortcutStr),
+                                                 QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                        ->exec();
+    if (response != QMessageBox::Yes)
+        return;
+
+    // instances that are deleted together can't break each other
+    QStringList linked;
+    for (const auto& id : ids) {
+        for (const auto& other : APPLICATION->instances()->getLinkedInstancesById(id)) {
+            if (!ids.contains(other) && !linked.contains(other))
+                linked.append(other);
+        }
+    }
+    if (!linked.isEmpty()) {
+        auto linkedResponse =
+            CustomMessageBox::selectable(this, tr("There are linked instances"),
+                                         tr("The following instance(s) might reference files in the instances being deleted:\n\n"
+                                            "%1\n\n"
+                                            "Deleting them could break the other instance(s).\n\n"
+                                            "Do you wish to proceed?",
+                                            nullptr, static_cast<int>(linked.size()))
+                                             .arg(linked.join('\n')),
+                                         QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                ->exec();
+        if (linkedResponse != QMessageBox::Yes)
+            return;
+    }
+
+    // everything that ends up in the trash can be restored with a single undo
+    const auto notTrashed = APPLICATION->instances()->trashInstances(ids);
+    for (const auto& id : notTrashed) {
+        APPLICATION->instances()->deleteInstance(id);
+    }
+    ui->actionUndoTrashInstance->setEnabled(APPLICATION->instances()->trashedSomething());
+    APPLICATION->settings()->set("SelectedInstance", QString());
+    selectionBad();
+}
+
 void MainWindow::on_actionExportInstanceZip_triggered()
 {
+    if (const auto instances = selectedInstances(); instances.size() > 1) {
+        exportInstancesToZips(QList<BaseInstance*>(instances.begin(), instances.end()), this);
+        return;
+    }
     if (m_selectedInstance) {
         ExportInstanceDialog dlg(m_selectedInstance, this);
         dlg.exec();
@@ -1557,7 +1702,7 @@ void MainWindow::on_actionExportInstanceZip_triggered()
 
 void MainWindow::on_actionExportInstanceMrPack_triggered()
 {
-    if (m_selectedInstance) {
+    if (m_selectedInstance && !isBulkSelection()) {
         ExportPackDialog dlg(m_selectedInstance, this);
         dlg.exec();
     }
@@ -1565,7 +1710,7 @@ void MainWindow::on_actionExportInstanceMrPack_triggered()
 
 void MainWindow::on_actionExportInstanceFlamePack_triggered()
 {
-    if (m_selectedInstance) {
+    if (m_selectedInstance && !isBulkSelection()) {
         if (auto cmp = m_selectedInstance->getPackProfile()->getComponent("net.minecraft");
             cmp && cmp->getVersionFile() && cmp->getVersionFile()->type == "snapshot") {
             QMessageBox msgBox(this);
@@ -1580,16 +1725,81 @@ void MainWindow::on_actionExportInstanceFlamePack_triggered()
 
 void MainWindow::on_actionRenameInstance_triggered()
 {
+    if (const auto instances = selectedInstances(); instances.size() > 1) {
+        bulkRenameInstances(instances);
+        return;
+    }
     if (m_selectedInstance) {
-        view->edit(view->currentIndex());
+        view->edit(proxymodel->mapFromSource(APPLICATION->instances()->getInstanceIndexById(m_selectedInstance->id())));
+    }
+}
+
+void MainWindow::bulkRenameInstances(const QList<MinecraftInstance*>& instances)
+{
+    BulkRenameDialog dlg(QList<BaseInstance*>(instances.begin(), instances.end()), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const auto names = dlg.newNames();
+    const bool renameFolders = dlg.renameFolders();
+
+    struct MovedInstance {
+        QString oldId;
+        QString newId;
+        QString group;
+    };
+    QList<MovedInstance> moved;
+    QStringList finalIds;
+    QStringList failures;
+    for (int i = 0; i < instances.size(); i++) {
+        auto* instance = instances[i];
+        const auto& name = names[i];
+        finalIds.append(instance->id());
+        if (name.isEmpty() || name == instance->name())
+            continue;
+
+        instance->setName(name);
+        if (!renameFolders)
+            continue;
+
+        QString error;
+        auto newRoot = renameInstanceDirSilently(instance, name, &error);
+        if (!error.isEmpty()) {
+            failures.append(tr("%1: %2").arg(name, error));
+        } else if (!newRoot.isEmpty()) {
+            auto newId = QFileInfo(newRoot).fileName();
+            moved.append({ instance->id(), newId, APPLICATION->instances()->getInstanceGroup(instance->id()) });
+            finalIds.last() = newId;
+        }
+    }
+
+    if (!moved.isEmpty()) {
+        // the instance ids change with their folders, so the groups have to be moved over to the new ids
+        for (const auto& instance : moved) {
+            if (instance.group != GroupId())
+                APPLICATION->instances()->setInstanceGroup(instance.oldId, GroupId());
+        }
+        refreshInstances();
+        for (const auto& instance : moved) {
+            if (instance.group != GroupId())
+                APPLICATION->instances()->setInstanceGroup(instance.newId, instance.group);
+        }
+        setSelectedInstancesByIds(finalIds);
+    }
+
+    if (!failures.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("Cannot rename instance folders"),
+                                     tr("The folders of the following instances could not be renamed, only their names were changed:\n\n%1")
+                                         .arg(failures.join('\n')),
+                                     QMessageBox::Warning, QMessageBox::Ok)
+            ->show();
     }
 }
 
 void MainWindow::on_actionViewSelectedInstFolder_triggered()
 {
-    if (m_selectedInstance) {
-        QString str = m_selectedInstance->instanceRoot();
-        DesktopServices::openPath(QFileInfo(str));
+    for (auto* instance : selectedInstances()) {
+        DesktopServices::openPath(QFileInfo(instance->instanceRoot()));
     }
 }
 
@@ -1635,21 +1845,23 @@ void MainWindow::instanceActivated(QModelIndex index)
 
 void MainWindow::on_actionLaunchInstance_triggered()
 {
-    if (m_selectedInstance && !m_selectedInstance->isRunning()) {
+    if (m_selectedInstance && !m_selectedInstance->isRunning() && !isBulkSelection()) {
         APPLICATION->launch(m_selectedInstance);
     }
 }
 
 void MainWindow::on_actionKillInstance_triggered()
 {
-    if (m_selectedInstance && m_selectedInstance->isRunning()) {
-        APPLICATION->kill(m_selectedInstance);
+    for (auto* instance : selectedInstances()) {
+        if (instance->isRunning()) {
+            APPLICATION->kill(instance);
+        }
     }
 }
 
 void MainWindow::on_actionCreateInstanceShortcut_triggered()
 {
-    if (!m_selectedInstance)
+    if (!m_selectedInstance || isBulkSelection())
         return;
 
     CreateShortcutDialog shortcutDlg(m_selectedInstance, this);
@@ -1674,42 +1886,107 @@ void MainWindow::startTask(Task* task)
     task->start();
 }
 
-void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] const QModelIndex& previous)
+void MainWindow::instanceChanged([[maybe_unused]] const QModelIndex& current, [[maybe_unused]] const QModelIndex& previous)
 {
-    if (!current.isValid()) {
+    updateSelectedInstance();
+}
+
+void MainWindow::updateSelectedInstance()
+{
+    const auto current = view->selectionModel()->currentIndex();
+    const auto selected = selectedInstances();
+
+    // single instance actions apply to the only selected instance, or to the current one if several are selected
+    MinecraftInstance* target = nullptr;
+    if (selected.size() == 1) {
+        target = selected.first();
+    } else if (!selected.isEmpty()) {
+        auto* currentInstance = APPLICATION->instances()->getInstanceById(current.data(InstanceList::InstanceIDRole).toString());
+        target = selected.contains(currentInstance) ? currentInstance : selected.first();
+    }
+
+    if (!target && !current.isValid()) {
         APPLICATION->settings()->set("SelectedInstance", QString());
         selectionBad();
         return;
     }
-    if (m_selectedInstance) {
-        disconnect(m_selectedInstance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
-        disconnect(m_selectedInstance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
+
+    // watch the running status of everything that is selected, as it affects which actions are available
+    for (const auto& instance : m_watchedInstances) {
+        if (instance) {
+            disconnect(instance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
+            disconnect(instance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
+        }
     }
-    QString id = current.data(InstanceList::InstanceIDRole).toString();
-    m_selectedInstance = APPLICATION->instances()->getInstanceById(id);
-    if (m_selectedInstance) {
-        ui->instanceToolBar->setEnabled(true);
-        setInstanceActionsEnabled(true);
-        ui->actionLaunchInstance->setEnabled(m_selectedInstance->canLaunch());
+    m_watchedInstances.clear();
+    for (auto* instance : selected) {
+        connect(instance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance, Qt::UniqueConnection);
+        connect(instance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance, Qt::UniqueConnection);
+        m_watchedInstances.append(instance);
+    }
 
-        ui->actionKillInstance->setEnabled(m_selectedInstance->isRunning());
-        ui->actionExportInstance->setEnabled(m_selectedInstance->canExport());
-        renameButton->setText(m_selectedInstance->name());
-        m_statusLeft->setText(m_selectedInstance->getStatusbarDescription());
-        updateStatusCenter();
-        updateInstanceToolIcon(m_selectedInstance->iconKey());
-
-        updateLaunchButton();
-
+    const bool targetChanged = m_selectedInstance != target;
+    m_selectedInstance = target;
+    if (targetChanged && m_selectedInstance) {
         APPLICATION->settings()->set("SelectedInstance", m_selectedInstance->id());
+    }
 
-        connect(m_selectedInstance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
-        connect(m_selectedInstance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
-    } else {
-        APPLICATION->settings()->set("SelectedInstance", QString());
-        selectionBad();
+    updateInstanceUi(selected);
+}
+
+void MainWindow::updateInstanceUi(const QList<MinecraftInstance*>& selected)
+{
+    if (!m_selectedInstance) {
+        // there is a current item, but nothing is selected
+        m_statusLeft->setText(tr("No instance selected"));
+        ui->instanceToolBar->setEnabled(false);
+        setInstanceActionsEnabled(false);
+        ui->actionLaunchInstance->setEnabled(false);
+        ui->actionKillInstance->setEnabled(false);
+        renameButton->setText(tr("Rename Instance"));
+        updateInstanceToolIcon("grass");
+        updateLaunchButton();
         return;
     }
+
+    ui->instanceToolBar->setEnabled(true);
+    setInstanceActionsEnabled(true);
+    updateStatusCenter();
+    updateLaunchButton();
+
+    if (selected.size() > 1) {
+        // only actions that work the same way for every instance are available for a bulk selection,
+        // settings and anything that needs per instance input have to be done one instance at a time
+        bool anyRunning = false;
+        bool allExportable = true;
+        bool sameIcon = true;
+        for (auto* instance : selected) {
+            anyRunning |= instance->isRunning();
+            allExportable &= instance->canExport();
+            sameIcon &= instance->iconKey() == m_selectedInstance->iconKey();
+        }
+        ui->actionLaunchInstance->setEnabled(false);
+        ui->actionKillInstance->setEnabled(anyRunning);
+        ui->actionEditInstance->setEnabled(false);
+        ui->actionCopyInstance->setEnabled(false);
+        ui->actionCreateInstanceShortcut->setEnabled(false);
+        ui->actionExportInstance->setEnabled(allExportable);
+        ui->actionExportInstanceMrPack->setEnabled(false);
+        ui->actionExportInstanceFlamePack->setEnabled(false);
+        renameButton->setText(tr("%n instance(s)", nullptr, static_cast<int>(selected.size())));
+        m_statusLeft->setText(tr("%n instance(s) selected", nullptr, static_cast<int>(selected.size())));
+        updateInstanceToolIcon(sameIcon ? m_selectedInstance->iconKey() : "grass");
+        return;
+    }
+
+    ui->actionLaunchInstance->setEnabled(m_selectedInstance->canLaunch());
+    ui->actionKillInstance->setEnabled(m_selectedInstance->isRunning());
+    ui->actionExportInstance->setEnabled(m_selectedInstance->canExport());
+    ui->actionExportInstanceMrPack->setEnabled(true);
+    ui->actionExportInstanceFlamePack->setEnabled(true);
+    renameButton->setText(m_selectedInstance->name());
+    m_statusLeft->setText(m_selectedInstance->getStatusbarDescription());
+    updateInstanceToolIcon(m_selectedInstance->iconKey());
 }
 
 void MainWindow::instanceSelectRequest(QString id)
@@ -1721,8 +1998,12 @@ void MainWindow::instanceDataChanged(const QModelIndex& topLeft, const QModelInd
 {
     auto current = view->selectionModel()->currentIndex();
     QItemSelection test(topLeft, bottomRight);
-    if (test.contains(current)) {
-        instanceChanged(current, current);
+    bool affectsSelection = test.contains(current);
+    for (const auto& index : view->selectionModel()->selectedIndexes()) {
+        affectsSelection |= test.contains(index);
+    }
+    if (affectsSelection) {
+        updateSelectedInstance();
     }
 }
 
@@ -1730,6 +2011,7 @@ void MainWindow::selectionBad()
 {
     // start by reseting everything...
     m_selectedInstance = nullptr;
+    m_watchedInstances.clear();
     m_statusLeft->setText(tr("No instance selected"));
 
     statusBar()->clearMessage();
@@ -1801,6 +2083,5 @@ void MainWindow::setInstanceActionsEnabled(bool enabled)
 
 void MainWindow::refreshCurrentInstance()
 {
-    auto current = view->selectionModel()->currentIndex();
-    instanceChanged(current, current);
+    updateSelectedInstance();
 }

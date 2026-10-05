@@ -43,6 +43,7 @@
 #include <memory>
 
 #include <QMainWindow>
+#include <QPointer>
 #include <QProcess>
 #include <QTimer>
 
@@ -188,6 +189,8 @@ class MainWindow : public QMainWindow {
 
     void instanceChanged(const QModelIndex& current, const QModelIndex& previous);
 
+    void updateSelectedInstance();
+
     void instanceSelectRequest(QString id);
 
     void instanceDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight);
@@ -226,6 +229,13 @@ class MainWindow : public QMainWindow {
     void updateCatState();
     void updateInstanceToolIcon(QString new_icon);
     void setSelectedInstanceById(const QString& id);
+    void setSelectedInstancesByIds(const QStringList& ids);
+    /// the selected instances, in the order they are displayed
+    QList<MinecraftInstance*> selectedInstances() const;
+    bool isBulkSelection() const;
+    void updateInstanceUi(const QList<MinecraftInstance*>& selected);
+    void bulkRenameInstances(const QList<MinecraftInstance*>& instances);
+    void bulkDeleteInstances(const QList<MinecraftInstance*>& instances);
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);
 
@@ -247,7 +257,10 @@ class MainWindow : public QMainWindow {
 
     unique_qobject_ptr<NewsChecker> m_newsChecker;
 
+    /// the instance single instance actions apply to: the selected instance, or the current one when several are selected
     MinecraftInstance* m_selectedInstance = nullptr;
+    /// all selected instances, watched for changes in their running status
+    QList<QPointer<MinecraftInstance>> m_watchedInstances;
     QString m_currentInstIcon;
 
     // managed by the application object

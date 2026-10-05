@@ -112,6 +112,34 @@ QString askToUpdateInstanceDirName(BaseInstance* instance, const QString& oldNam
     return newRoot;
 }
 
+QString renameInstanceDirSilently(BaseInstance* instance, const QString& newName, QString* error)
+{
+    auto oldRoot = instance->instanceRoot();
+    auto parentDir = QFileInfo(oldRoot).dir().absolutePath();
+    auto newDirName = FS::DirNameFromString(newName, APPLICATION->instances()->instanceDirs());
+    auto newRoot = FS::PathCombine(parentDir, newDirName);
+    if (oldRoot == newRoot || oldRoot == FS::PathCombine(parentDir, newName))
+        return QString();
+
+    if (newDirName.isEmpty() || QDir(newRoot).exists()) {
+        *error = QObject::tr("the folder %1 already exists").arg(newRoot);
+        return QString();
+    }
+    if (instance->isRunning()) {
+        *error = QObject::tr("the instance is running");
+        return QString();
+    }
+    if (!APPLICATION->instances()->getLinkedInstancesById(instance->id()).empty()) {
+        *error = QObject::tr("other instances might reference files in this instance");
+        return QString();
+    }
+    if (!instance->syncInstanceDirName(newRoot)) {
+        *error = QObject::tr("could not rename %1 to %2").arg(oldRoot, newRoot);
+        return QString();
+    }
+    return newRoot;
+}
+
 bool checkLinkedInstances(const QString& id, QWidget* parent, const QString& verb)
 {
     auto linkedInstances = APPLICATION->instances()->getLinkedInstancesById(id);

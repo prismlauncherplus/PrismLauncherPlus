@@ -118,6 +118,8 @@ class InstanceList : public QAbstractListModel {
     void deleteGroup(const GroupId& name);
     void renameGroup(const GroupId& src, const GroupId& dst);
     bool trashInstance(const InstanceId& id);
+    /// Trash several instances as a single undoable step; @return the ids that could not be trashed
+    QStringList trashInstances(const QStringList& ids);
     bool trashedSomething() const;
     bool undoTrashInstance();
     void deleteInstance(const InstanceId& id);
@@ -203,5 +205,8 @@ class InstanceList : public QAbstractListModel {
     bool m_groupsLoaded = false;
     bool m_instancesProbed = false;
 
-    QStack<TrashHistoryItem> m_trashHistory;
+    bool trashInstanceInto(const InstanceId& id, QList<TrashHistoryItem>& batch);
+
+    // each entry is a batch of instances that were trashed together and are restored together
+    QStack<QList<TrashHistoryItem>> m_trashHistory;
 };
