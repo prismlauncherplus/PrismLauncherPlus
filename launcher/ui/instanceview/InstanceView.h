@@ -97,6 +97,7 @@ class InstanceView : public QAbstractItemView {
     void modelReset();
     void rowsRemoved();
     void currentChanged(const QModelIndex& current, const QModelIndex& previous) override;
+    void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected) override;
 
    signals:
     void droppedURLs(QList<QUrl> urls);

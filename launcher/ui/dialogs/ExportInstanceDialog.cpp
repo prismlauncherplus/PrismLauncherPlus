@@ -58,6 +58,7 @@
 #include <QStack>
 #include <functional>
 #include "Application.h"
+#include "InstanceList.h"
 #include "SeparatorPrefixTree.h"
 #include "tasks/ConcurrentTask.h"
 
@@ -206,30 +207,35 @@ QString ExportInstanceDialog::ignoreFileName()
     return ignoreFileNameFor(m_instance);
 }
 
-void exportInstancesToZips(const QList<BaseInstance*>& instances, QWidget* parent)
+void exportInstancesToZips(const QStringList& instanceIds, QWidget* parent)
 {
-    if (instances.isEmpty())
+    if (instanceIds.isEmpty())
         return;
 
     const QString outputDir = QFileDialog::getExistingDirectory(
-        parent, QObject::tr("Export %n instance(s) to", nullptr, static_cast<int>(instances.size())), QDir::homePath());
+        parent, QObject::tr("Export %n instance(s) to", nullptr, static_cast<int>(instanceIds.size())), QDir::homePath());
     if (outputDir.isEmpty())
         return;
 
-    // pick a unique output file for every instance, so that instances with the same name don't overwrite each other
+    // pick a unique output file for every instance, so that instances with the same name don't overwrite each other.
+    // compared case insensitively, as "Foo.zip" and "foo.zip" are the same file on Windows and macOS
     QSet<QString> usedPaths;
     QStringList existing;
-    QList<std::pair<BaseInstance*, QString>> outputs;
-    for (auto* instance : instances) {
+    QList<std::pair<QString, QString>> outputs;  // instance id, output file
+    for (const auto& id : instanceIds) {
+        // instances may have been removed while the dialog was open
+        auto* instance = APPLICATION->instances()->getInstanceById(id);
+        if (!instance)
+            continue;
         auto baseName = FS::RemoveInvalidFilenameChars(instance->name());
         auto output = FS::PathCombine(outputDir, baseName + ".zip");
-        for (int i = 2; usedPaths.contains(output); i++) {
+        for (int i = 2; usedPaths.contains(output.toLower()); i++) {
             output = FS::PathCombine(outputDir, QString("%1 (%2).zip").arg(baseName).arg(i));
         }
-        usedPaths.insert(output);
+        usedPaths.insert(output.toLower());
         if (QFileInfo::exists(output))
             existing.append(QFileInfo(output).fileName());
-        outputs.append({ instance, output });
+        outputs.append({ id, output });
     }
 
     if (!existing.isEmpty()) {
@@ -245,7 +251,10 @@ void exportInstancesToZips(const QList<BaseInstance*>& instances, QWidget* paren
 
     auto task = makeShared<ConcurrentTask>(QObject::tr("Exporting instances"), 1);
     QStringList collectFailures;
-    for (const auto& [instance, output] : outputs) {
+    for (const auto& [id, output] : outputs) {
+        auto* instance = APPLICATION->instances()->getInstanceById(id);
+        if (!instance)
+            continue;
         SaveIcon(instance);
 
         FileIgnoreProxy proxy(instance->instanceRoot(), nullptr);

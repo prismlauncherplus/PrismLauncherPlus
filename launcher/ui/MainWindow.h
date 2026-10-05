@@ -233,9 +233,11 @@ class MainWindow : public QMainWindow {
     void setSelectedInstancesByIds(const QStringList& ids);
     /// the selected instances, in the order they are displayed
     QList<MinecraftInstance*> selectedInstances() const;
+    /// ids of the selected instances; unlike instance pointers they stay valid while a dialog is open
+    QStringList selectedInstanceIds() const;
     bool isBulkSelection() const;
     void updateInstanceUi(const QList<MinecraftInstance*>& selected);
-    void bulkRenameInstances(const QList<MinecraftInstance*>& instances);
+    void bulkRenameInstances(const QStringList& ids);
     void bulkDeleteInstances(const QList<MinecraftInstance*>& instances);
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);

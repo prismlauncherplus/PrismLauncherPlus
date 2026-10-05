@@ -290,7 +290,7 @@ void ListViewDelegate::setModelData(QWidget* editor, QAbstractItemModel* model, 
     if (text.size() != 0) {
         const auto before = model->data(index).toString();
         model->setData(index, text);
-        emit textChanged(before, text);
+        emit textChanged(index.data(InstanceList::InstanceIDRole).toString(), before, text);
     }
 }
 

@@ -20,7 +20,6 @@
 
 #include <QDialog>
 
-class BaseInstance;
 class QCheckBox;
 class QDialogButtonBox;
 class QLineEdit;
@@ -31,9 +30,9 @@ class BulkRenameDialog : public QDialog {
     Q_OBJECT
 
    public:
-    explicit BulkRenameDialog(const QList<BaseInstance*>& instances, QWidget* parent = nullptr);
+    explicit BulkRenameDialog(const QStringList& currentNames, QWidget* parent = nullptr);
 
-    /// the new names, in the same order as the instances passed to the constructor
+    /// the new names, in the same order as the names passed to the constructor
     QStringList newNames() const;
     bool renameFolders() const;
 
@@ -41,7 +40,7 @@ class BulkRenameDialog : public QDialog {
     QString newNameFor(int index) const;
     void updatePreview();
 
-    QList<BaseInstance*> m_instances;
+    QStringList m_currentNames;
     QLineEdit* m_pattern;
     QLineEdit* m_find;
     QLineEdit* m_replace;

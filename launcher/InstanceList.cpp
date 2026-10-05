@@ -413,7 +413,11 @@ bool InstanceList::isGroupCollapsed(const QString& group)
 bool InstanceList::trashInstance(const InstanceId& id)
 {
     QList<TrashHistoryItem> batch;
-    if (!trashInstanceInto(id, batch))
+    bool groupsChanged = false;
+    bool trashed = trashInstanceInto(id, batch, groupsChanged);
+    if (groupsChanged)
+        saveGroupList();
+    if (!trashed)
         return false;
     m_trashHistory.push(batch);
     return true;
@@ -423,16 +427,34 @@ QStringList InstanceList::trashInstances(const QStringList& ids)
 {
     QStringList failed;
     QList<TrashHistoryItem> batch;
+    bool groupsChanged = false;
     for (const auto& id : ids) {
-        if (!trashInstanceInto(id, batch))
+        if (!trashInstanceInto(id, batch, groupsChanged))
             failed.append(id);
     }
+    // write the group list once for the whole batch
+    if (groupsChanged)
+        saveGroupList();
     if (!batch.isEmpty())
         m_trashHistory.push(batch);
     return failed;
 }
 
-bool InstanceList::trashInstanceInto(const InstanceId& id, QList<TrashHistoryItem>& batch)
+void InstanceList::forgetInstances(const QStringList& ids)
+{
+    for (const auto& id : ids) {
+        auto* inst = getInstanceById(id);
+        if (!inst)
+            continue;
+        auto row = getInstIndex(inst);
+        inst->invalidate();
+        beginRemoveRows(QModelIndex(), row, row);
+        m_instances.erase(m_instances.begin() + row);
+        endRemoveRows();
+    }
+}
+
+bool InstanceList::trashInstanceInto(const InstanceId& id, QList<TrashHistoryItem>& batch, bool& groupsChanged)
 {
     auto* inst = getInstanceById(id);
     if (!inst) {
@@ -447,7 +469,7 @@ bool InstanceList::trashInstanceInto(const InstanceId& id, QList<TrashHistoryIte
 
     if (m_instanceGroupIndex.remove(id) != 0) {
         decreaseGroupCount(cachedGroupId);
-        saveGroupList();
+        groupsChanged = true;
     }
 
     if (!FS::trash(inst->instanceRoot(), &trashedLoc)) {

@@ -211,7 +211,16 @@ void InstanceView::updateGeometries()
     qDeleteAll(m_groups);
     m_groups = cats.values();
     updateScrollbar();
+    // instances moved into a collapsed group must not stay part of a bulk selection
+    deselectHiddenItems();
     viewport()->update();
+}
+
+void InstanceView::selectionChanged(const QItemSelection& selected, const QItemSelection& deselected)
+{
+    QAbstractItemView::selectionChanged(selected, deselected);
+    // e.g. ctrl+clicking a second item while a hidden one is selected
+    deselectHiddenItems();
 }
 
 bool InstanceView::isIndexHidden(const QModelIndex& index) const
@@ -907,10 +916,12 @@ void InstanceView::toggleSelected(const QModelIndex& index)
     if (selected.size() <= 1) {
         return;
     }
-    selectionModel()->select(index, QItemSelectionModel::Deselect);
-    // keep the current item inside the selection
+    // keep the current item inside the selection; move it before deselecting, so the selection is never without it
     selected.removeAll(index);
     selectionModel()->setCurrentIndex(selected.last(), QItemSelectionModel::NoUpdate);
+    selectionModel()->select(index, QItemSelectionModel::Deselect);
+    // ranges continue from the toggled item, not from wherever the current item went
+    m_selectionAnchor = index;
 }
 
 void InstanceView::updateRubberBandSelection()
@@ -936,6 +947,9 @@ void InstanceView::updateRubberBandSelection()
 
 void InstanceView::deselectHiddenItems()
 {
+    if (!selectionModel()) {
+        return;
+    }
     const auto selected = selectionModel()->selectedIndexes();
     if (selectionMode() != ExtendedSelection || selected.size() <= 1) {
         return;

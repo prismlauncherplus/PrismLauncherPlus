@@ -293,9 +293,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         view->setFrameShape(QFrame::NoFrame);
         // do not show ugly blue border on the mac
         view->setAttribute(Qt::WA_MacShowFocusRect, false);
-        connect(delegate, &ListViewDelegate::textChanged, this, [this](QString before, QString after) {
-            if (auto newRoot = askToUpdateInstanceDirName(m_selectedInstance, before, after, this); !newRoot.isEmpty()) {
-                auto oldID = m_selectedInstance->id();
+        connect(delegate, &ListViewDelegate::textChanged, this, [this](QString instanceId, QString before, QString after) {
+            // the edited instance, which isn't necessarily the selected one
+            auto* instance = APPLICATION->instances()->getInstanceById(instanceId);
+            if (!instance)
+                return;
+            if (auto newRoot = askToUpdateInstanceDirName(instance, before, after, this); !newRoot.isEmpty()) {
+                auto oldID = instance->id();
                 auto newID = QFileInfo(newRoot).fileName();
                 QString origGroup(APPLICATION->instances()->getInstanceGroup(oldID));
                 bool syncGroup = origGroup != GroupId() && oldID != newID;
@@ -1229,15 +1233,17 @@ void MainWindow::on_actionMATRIX_triggered()
 
 void MainWindow::on_actionChangeInstIcon_triggered()
 {
-    const auto instances = selectedInstances();
-    if (!m_selectedInstance || instances.isEmpty())
+    const auto ids = selectedInstanceIds();
+    if (!m_selectedInstance || ids.isEmpty())
         return;
 
     IconPickerDialog dlg(this);
     dlg.execWithSelection(m_selectedInstance->iconKey());
     if (dlg.result() == QDialog::Accepted) {
-        for (auto* instance : instances) {
-            instance->setIconKey(dlg.selectedIconKey);
+        // instances may have been removed while the dialog was open
+        for (const auto& id : ids) {
+            if (auto* instance = APPLICATION->instances()->getInstanceById(id))
+                instance->setIconKey(dlg.selectedIconKey);
         }
         auto icon = APPLICATION->icons()->getIcon(dlg.selectedIconKey);
         ui->actionChangeInstIcon->setIcon(icon);
@@ -1288,8 +1294,16 @@ void MainWindow::setSelectedInstancesByIds(const QStringList& ids)
     }
     if (!first.isValid())
         return;
-    view->selectionModel()->setCurrentIndex(first, QItemSelectionModel::NoUpdate);
     view->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+    view->selectionModel()->setCurrentIndex(first, QItemSelectionModel::NoUpdate);
+}
+
+QStringList MainWindow::selectedInstanceIds() const
+{
+    QStringList ids;
+    for (auto* instance : selectedInstances())
+        ids.append(instance->id());
+    return ids;
 }
 
 QList<MinecraftInstance*> MainWindow::selectedInstances() const
@@ -1321,35 +1335,34 @@ bool MainWindow::isBulkSelection() const
 
 void MainWindow::on_actionChangeInstGroup_triggered()
 {
-    const auto instances = selectedInstances();
-    if (instances.isEmpty())
+    const auto ids = selectedInstanceIds();
+    if (ids.isEmpty())
         return;
 
     // only preselect a group if all the instances share it
-    QString src(APPLICATION->instances()->getInstanceGroup(instances.first()->id()));
-    for (auto* instance : instances) {
-        if (APPLICATION->instances()->getInstanceGroup(instance->id()) != src) {
-            src = QString();
+    QString src(APPLICATION->instances()->getInstanceGroup(ids.first()));
+    bool mixed = false;
+    for (const auto& id : ids) {
+        if (APPLICATION->instances()->getInstanceGroup(id) != src) {
+            mixed = true;
             break;
         }
     }
 
     QStringList groups = APPLICATION->instances()->getGroups();
     groups.prepend("");
-    int index = groups.indexOf(src);
+    // with mixed groups, preselecting "no group" would ungroup everything when just pressing OK
+    const QString keepGroups = tr("(keep current groups)");
+    if (mixed)
+        groups.prepend(keepGroups);
+    int index = mixed ? 0 : groups.indexOf(src);
     bool ok = false;
-    QString label = instances.size() > 1 ? tr("Enter a new group name for %n instance(s).", nullptr, static_cast<int>(instances.size()))
-                                         : tr("Enter a new group name.");
+    QString label = ids.size() > 1 ? tr("Enter a new group name for %n instance(s).", nullptr, static_cast<int>(ids.size()))
+                                   : tr("Enter a new group name.");
     QString dst = QInputDialog::getItem(this, tr("Group name"), label, groups, index, true, &ok);
-    dst = dst.simplified();
-
-    if (ok) {
-        QStringList ids;
-        for (auto* instance : instances) {
-            ids.append(instance->id());
-        }
-        APPLICATION->instances()->setInstanceGroups(ids, dst);
-    }
+    if (!ok || (mixed && dst == keepGroups))
+        return;
+    APPLICATION->instances()->setInstanceGroups(ids, dst.simplified());
 }
 
 void MainWindow::deleteGroup(QString group)
@@ -1717,7 +1730,7 @@ void MainWindow::bulkDeleteInstances(const QList<MinecraftInstance*>& instances)
 void MainWindow::on_actionExportInstanceZip_triggered()
 {
     if (const auto instances = selectedInstances(); instances.size() > 1) {
-        exportInstancesToZips(QList<BaseInstance*>(instances.begin(), instances.end()), this);
+        exportInstancesToZips(selectedInstanceIds(), this);
         return;
     }
     if (m_selectedInstance) {
@@ -1752,7 +1765,7 @@ void MainWindow::on_actionExportInstanceFlamePack_triggered()
 void MainWindow::on_actionRenameInstance_triggered()
 {
     if (const auto instances = selectedInstances(); instances.size() > 1) {
-        bulkRenameInstances(instances);
+        bulkRenameInstances(selectedInstanceIds());
         return;
     }
     if (m_selectedInstance) {
@@ -1760,25 +1773,30 @@ void MainWindow::on_actionRenameInstance_triggered()
     }
 }
 
-void MainWindow::bulkRenameInstances(const QList<MinecraftInstance*>& instances)
+void MainWindow::bulkRenameInstances(const QStringList& ids)
 {
-    BulkRenameDialog dlg(QList<BaseInstance*>(instances.begin(), instances.end()), this);
+    QStringList currentNames;
+    for (const auto& id : ids) {
+        auto* instance = APPLICATION->instances()->getInstanceById(id);
+        currentNames.append(instance ? instance->name() : id);
+    }
+
+    BulkRenameDialog dlg(currentNames, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
     const auto names = dlg.newNames();
     const bool renameFolders = dlg.renameFolders();
 
-    struct MovedInstance {
-        QString oldId;
-        QString newId;
-        QString group;
-    };
-    QList<MovedInstance> moved;
     QStringList finalIds;
+    QStringList movedOldIds;
+    QMap<GroupId, QStringList> movedGroups;  // group -> new ids of the instances whose folder (and so id) changed
     QStringList failures;
-    for (int i = 0; i < instances.size(); i++) {
-        auto* instance = instances[i];
+    for (int i = 0; i < ids.size(); i++) {
+        // instances may have been removed while the dialog was open
+        auto* instance = APPLICATION->instances()->getInstanceById(ids[i]);
+        if (!instance)
+            continue;
         const auto& name = names[i];
         finalIds.append(instance->id());
         if (name.isEmpty() || name == instance->name())
@@ -1794,21 +1812,22 @@ void MainWindow::bulkRenameInstances(const QList<MinecraftInstance*>& instances)
             failures.append(tr("%1: %2").arg(name, error));
         } else if (!newRoot.isEmpty()) {
             auto newId = QFileInfo(newRoot).fileName();
-            moved.append({ instance->id(), newId, APPLICATION->instances()->getInstanceGroup(instance->id()) });
+            movedOldIds.append(instance->id());
+            movedGroups[APPLICATION->instances()->getInstanceGroup(instance->id())].append(newId);
             finalIds.last() = newId;
         }
     }
 
-    if (!moved.isEmpty()) {
+    if (!movedOldIds.isEmpty()) {
         // the instance ids change with their folders, so the groups have to be moved over to the new ids
-        for (const auto& instance : moved) {
-            if (instance.group != GroupId())
-                APPLICATION->instances()->setInstanceGroup(instance.oldId, GroupId());
-        }
+        APPLICATION->instances()->setInstanceGroups(movedOldIds, GroupId());
+        // A renamed folder can take a name another selected instance had before (e.g. renumbering "Pack 2" to "Pack 1" and
+        // "Pack 3" to "Pack 2"). The reload would keep the old object for such an id, so drop all renamed instances first.
+        APPLICATION->instances()->forgetInstances(movedOldIds);
         refreshInstances();
-        for (const auto& instance : moved) {
-            if (instance.group != GroupId())
-                APPLICATION->instances()->setInstanceGroup(instance.newId, instance.group);
+        for (auto iter = movedGroups.begin(); iter != movedGroups.end(); ++iter) {
+            if (iter.key() != GroupId())
+                APPLICATION->instances()->setInstanceGroups(iter.value(), iter.key());
         }
         setSelectedInstancesByIds(finalIds);
     }
@@ -1848,7 +1867,8 @@ void MainWindow::changeEvent(QEvent* event)
 
 void MainWindow::instanceActivated(QModelIndex index)
 {
-    if (!index.isValid())
+    // launching or editing only works on one instance (Enter and modified double clicks also activate)
+    if (!index.isValid() || isBulkSelection() || !view->selectionModel()->isSelected(index))
         return;
     QString id = index.data(InstanceList::InstanceIDRole).toString();
     MinecraftInstance* inst = APPLICATION->instances()->getInstanceById(id);
@@ -2037,6 +2057,12 @@ void MainWindow::selectionBad()
 {
     // start by reseting everything...
     m_selectedInstance = nullptr;
+    for (const auto& instance : m_watchedInstances) {
+        if (instance) {
+            disconnect(instance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
+            disconnect(instance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
+        }
+    }
     m_watchedInstances.clear();
     m_statusLeft->setText(tr("No instance selected"));
 

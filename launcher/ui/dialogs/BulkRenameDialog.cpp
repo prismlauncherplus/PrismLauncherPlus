@@ -25,15 +25,16 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "Application.h"
-#include "BaseInstance.h"
+#include "settings/SettingsObject.h"
 
-BulkRenameDialog::BulkRenameDialog(const QList<BaseInstance*>& instances, QWidget* parent) : QDialog(parent), m_instances(instances)
+BulkRenameDialog::BulkRenameDialog(const QStringList& currentNames, QWidget* parent) : QDialog(parent), m_currentNames(currentNames)
 {
-    setWindowTitle(tr("Rename %n instance(s)", nullptr, static_cast<int>(instances.size())));
+    setWindowTitle(tr("Rename %n instance(s)", nullptr, static_cast<int>(currentNames.size())));
     resize(560, 440);
 
     auto layout = new QVBoxLayout(this);
@@ -59,8 +60,8 @@ BulkRenameDialog::BulkRenameDialog(const QList<BaseInstance*>& instances, QWidge
     m_preview->setRootIsDecorated(false);
     m_preview->setSelectionMode(QAbstractItemView::NoSelection);
     m_preview->header()->setSectionResizeMode(QHeaderView::Stretch);
-    for (auto* instance : m_instances) {
-        new QTreeWidgetItem(m_preview, { instance->name(), instance->name() });
+    for (const auto& name : m_currentNames) {
+        new QTreeWidgetItem(m_preview, { name, name });
     }
     layout->addWidget(m_preview);
 
@@ -86,9 +87,18 @@ BulkRenameDialog::BulkRenameDialog(const QList<BaseInstance*>& instances, QWidge
 
 QString BulkRenameDialog::newNameFor(int index) const
 {
-    QString name = m_pattern->text();
-    name.replace(QStringLiteral("{name}"), m_instances[index]->name());
-    name.replace(QStringLiteral("{n}"), QString::number(index + 1));
+    // replace both placeholders in one pass, so a "{n}" in an instance name stays as it is
+    static const QRegularExpression placeholders(QStringLiteral("\\{name\\}|\\{n\\}"));
+    const QString pattern = m_pattern->text();
+    QString name;
+    qsizetype last = 0;
+    for (auto match = placeholders.globalMatch(pattern); match.hasNext();) {
+        auto placeholder = match.next();
+        name += pattern.mid(last, placeholder.capturedStart() - last);
+        name += placeholder.captured() == QStringLiteral("{name}") ? m_currentNames[index] : QString::number(index + 1);
+        last = placeholder.capturedEnd();
+    }
+    name += pattern.mid(last);
     if (!m_find->text().isEmpty()) {
         name.replace(m_find->text(), m_replace->text());
     }
@@ -101,7 +111,7 @@ QString BulkRenameDialog::newNameFor(int index) const
 QStringList BulkRenameDialog::newNames() const
 {
     QStringList names;
-    for (int i = 0; i < m_instances.size(); i++) {
+    for (int i = 0; i < m_currentNames.size(); i++) {
         names.append(newNameFor(i));
     }
     return names;
@@ -116,7 +126,7 @@ void BulkRenameDialog::updatePreview()
 {
     bool valid = true;
     bool changed = false;
-    for (int i = 0; i < m_instances.size(); i++) {
+    for (int i = 0; i < m_currentNames.size(); i++) {
         auto name = newNameFor(i);
         auto item = m_preview->topLevelItem(i);
         if (name.isEmpty()) {
@@ -125,7 +135,7 @@ void BulkRenameDialog::updatePreview()
         } else {
             item->setText(1, name);
         }
-        changed |= name != m_instances[i]->name();
+        changed |= name != m_currentNames[i];
     }
     m_buttons->button(QDialogButtonBox::Ok)->setEnabled(valid && changed);
 }

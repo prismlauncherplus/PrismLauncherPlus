@@ -71,6 +71,6 @@ class ExportInstanceDialog : public QDialog {
     void rowsInserted(QModelIndex parent, int top, int bottom);
 };
 
-/// Export several instances as zip archives into a single directory, without per-instance file selection.
+/// Export several instances (by id) as zip archives into a single directory, without per-instance file selection.
 /// The files excluded for each instance are the defaults plus whatever was saved in its .packignore.
-void exportInstancesToZips(const QList<BaseInstance*>& instances, QWidget* parent);
+void exportInstancesToZips(const QStringList& instanceIds, QWidget* parent);
