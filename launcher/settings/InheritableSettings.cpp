@@ -104,6 +104,7 @@ void registerMinecraft(SettingsObject* settings, const ParentLookup& parent)
     // Shared game options (options.txt) profile, overriding with an empty id means no profile
     auto gameOptionsSetting = settings->registerSetting("OverrideGameOptionsProfile", false);
     settings->registerOverride(parent("GameOptionsProfile"), gameOptionsSetting);
+    settings->registerOverride(parent("GameOptionsReviewChanges"), gameOptionsSetting);
 }
 
 QStringList gateIds()

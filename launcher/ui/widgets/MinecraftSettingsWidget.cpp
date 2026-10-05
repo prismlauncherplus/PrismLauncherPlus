@@ -291,6 +291,7 @@ void MinecraftSettingsWidget::loadSettings()
     m_ui->gameOptionsGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideGameOptionsProfile").toBool());
     m_ui->gameOptionsGroupBox->blockSignals(false);
     populateGameOptionsProfiles(settings->get("GameOptionsProfile").toString());
+    m_ui->gameOptionsReviewCheck->setChecked(settings->get("GameOptionsReviewChanges").toBool());
 
     // Performance
     m_ui->perfomanceGroupBox->setChecked(!isOverrideMode() || settings->get("OverridePerformance").toBool());
@@ -514,8 +515,10 @@ void MinecraftSettingsWidget::saveSettings()
     if (gameOptions) {
         // an empty id means no profile, which is a valid override too
         settings->set("GameOptionsProfile", m_ui->gameOptionsProfileComboBox->currentData().toString());
+        settings->set("GameOptionsReviewChanges", m_ui->gameOptionsReviewCheck->isChecked());
     } else {
         settings->reset("GameOptionsProfile");
+        settings->reset("GameOptionsReviewChanges");
     }
 
     // Game time

@@ -5,6 +5,7 @@
 #include <minecraft/gameoptions/GameOptionsMerger.h>
 #include <minecraft/gameoptions/GameOptionsProfile.h>
 #include <minecraft/gameoptions/GameOptionsProfileList.h>
+#include <minecraft/gameoptions/GameOptionsSync.h>
 #include <minecraft/gameoptions/OptionsFile.h>
 
 using namespace GameOptionsCompat;
@@ -362,6 +363,23 @@ class GameOptionsTest : public QObject {
         QCOMPARE(profile.value("key_key.forward", bandOf("key_key.forward", "key.keyboard.up"))->value, QString("key.keyboard.up"));
         // the 1.12 binding is still there
         QCOMPARE(profile.value("key_key.forward", bandOf("key_key.forward", "17"))->value, QString("17"));
+    }
+
+    // GameOptionsSync
+
+    void test_sessionJsonRoundTrip()
+    {
+        GameOptionsSync::Session session;
+        session.profileId = "profile";
+        session.client = ClientFormat::detect(OptionsFile::parse(legacyOptions));
+        session.snapshot = { { "fov", "0.0" }, { "key_key.forward", "17" } };
+        auto loaded = GameOptionsSync::Session::fromJson(session.toJson());
+        QVERIFY(loaded.has_value());
+        QCOMPARE(loaded->profileId, session.profileId);
+        QCOMPARE(loaded->client.dataVersion, 1343);
+        QCOMPARE(loaded->client.keybinds, KeybindFormat::Codes);
+        QCOMPARE(loaded->snapshot, session.snapshot);
+        QVERIFY(!GameOptionsSync::Session::fromJson(QJsonObject()).has_value());
     }
 
     // GameOptionsProfileList

@@ -268,6 +268,8 @@ set(MINECRAFT_SOURCES
     minecraft/launch/ReconstructAssets.cpp
     minecraft/launch/ReconstructAssets.h
     minecraft/launch/ScanModFolders.cpp
+    minecraft/launch/SyncGameOptions.cpp
+    minecraft/launch/SyncGameOptions.h
     minecraft/launch/ScanModFolders.h
     minecraft/launch/VerifyJavaInstall.cpp
     minecraft/launch/VerifyJavaInstall.h
@@ -286,6 +288,8 @@ set(MINECRAFT_SOURCES
     minecraft/gameoptions/GameOptionsMerger.h
     minecraft/gameoptions/GameOptionsProfileList.cpp
     minecraft/gameoptions/GameOptionsProfileList.h
+    minecraft/gameoptions/GameOptionsSync.cpp
+    minecraft/gameoptions/GameOptionsSync.h
     minecraft/MinecraftInstance.h
     minecraft/LaunchProfile.cpp
     minecraft/LaunchProfile.h
@@ -1061,6 +1065,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/CustomMessageBox.h
     ui/dialogs/BulkRenameDialog.cpp
     ui/dialogs/BulkRenameDialog.h
+    ui/dialogs/GameOptionsReviewDialog.cpp
+    ui/dialogs/GameOptionsReviewDialog.h
     ui/dialogs/GroupSettingsDialog.cpp
     ui/dialogs/GroupSettingsDialog.h
     ui/dialogs/ExportInstanceDialog.cpp

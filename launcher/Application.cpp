@@ -110,6 +110,7 @@
 
 #include <minecraft/auth/AccountList.h>
 #include <minecraft/gameoptions/GameOptionsProfileList.h>
+#include <minecraft/gameoptions/GameOptionsSync.h>
 #include "icons/IconList.h"
 #include "net/HttpMetaCache.h"
 
@@ -906,6 +907,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         // id of the game options profile instances use, unless their group or themselves override it. empty for none
         m_settings->registerSetting("GameOptionsProfile", "");
+        // whether to ask before saving the game options changed in game to the profile
+        m_settings->registerSetting("GameOptionsReviewChanges", false);
 
         m_settings->registerSetting("WorldTools", "{}");
 
@@ -1039,6 +1042,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     {
         m_gameOptionsProfiles = std::make_unique<GameOptionsProfileList>(QDir("gameoptions").absolutePath());
         m_gameOptionsProfiles->load();
+        // save the changes of games that were still running when the launcher stopped last time
+        GameOptionsSync::recoverSessions(m_instances.get());
         qInfo() << "<> Game options profiles loaded.";
     }
 

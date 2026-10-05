@@ -296,6 +296,13 @@
                </layout>
               </item>
               <item>
+               <widget class="QCheckBox" name="gameOptionsReviewCheck">
+                <property name="text">
+                 <string>When the game closes, &amp;review the changed options before saving them to the profile</string>
+                </property>
+               </widget>
+              </item>
+              <item>
                <widget class="QLabel" name="gameOptionsInfoLabel">
                 <property name="wordWrap">
                  <bool>true</bool>

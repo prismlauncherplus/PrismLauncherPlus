@@ -68,6 +68,7 @@
 #include "minecraft/launch/PrintInstanceInfo.h"
 #include "minecraft/launch/ReconstructAssets.h"
 #include "minecraft/launch/ScanModFolders.h"
+#include "minecraft/launch/SyncGameOptions.h"
 #include "minecraft/launch/VerifyJavaInstall.h"
 
 #include "minecraft/update/AssetUpdateTask.h"
@@ -1208,6 +1209,10 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
         process->appendStep(makeShared<ReconstructAssets>(pptr));
     }
 
+    // apply the shared game options, and save the ones changed in game when it stops
+    {
+        process->appendStep(makeShared<SyncGameOptions>(pptr));
+    }
     {
         // actually launch the game
         auto step = makeShared<LauncherPartLaunch>(pptr);
