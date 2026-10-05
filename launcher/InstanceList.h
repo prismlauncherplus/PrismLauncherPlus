@@ -221,7 +221,7 @@ class InstanceList : public QAbstractListModel {
     /// @return whether the group of the instance changed, the group list still has to be saved
     bool assignInstanceGroup(const InstanceId& id, GroupId name);
     static QString groupSettingsPath(const GroupId& group);
-    static void migrateGroupSettingsFiles();
+    void migrateGroupSettingsFiles();
 
     // each entry is a batch of instances that were trashed together and are restored together
     QStack<QList<TrashHistoryItem>> m_trashHistory;

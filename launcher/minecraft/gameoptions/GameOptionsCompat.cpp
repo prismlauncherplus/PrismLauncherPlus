@@ -17,6 +17,7 @@
  */
 #include "GameOptionsCompat.h"
 
+#include <QRegularExpression>
 #include <QSet>
 
 #include "OptionsFile.h"
@@ -74,6 +75,12 @@ bool isKeybind(const QString& key)
     return key.startsWith(keybindPrefix);
 }
 
+bool isNumber(const QString& value)
+{
+    static const QRegularExpression number(QStringLiteral("^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$"));
+    return number.match(value.trimmed()).hasMatch();
+}
+
 QString bandOf(const QString& key, const QString& value)
 {
     auto trimmed = value.trimmed();
@@ -81,9 +88,7 @@ QString bandOf(const QString& key, const QString& value)
         // Forge adds modifiers to keybinds ("17:SHIFT")
         trimmed = trimmed.section(':', 0, 0);
     }
-    bool isNumber = false;
-    trimmed.toDouble(&isNumber);
-    if (isNumber) {
+    if (isNumber(trimmed)) {
         return numberBand;
     }
     if (trimmed.size() >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {

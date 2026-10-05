@@ -54,6 +54,9 @@ bool isShareable(const QString& key);
 /// whether the option's values depend on the Minecraft version
 bool isKeybind(const QString& key);
 
+/// whether the value is a plain decimal number (not "nan", "inf" or similar words)
+bool isNumber(const QString& value);
+
 /// the band (shape) of a value: "number", "quoted", "structured" or "word"
 QString bandOf(const QString& key, const QString& value);
 

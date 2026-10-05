@@ -313,17 +313,34 @@ QString InstanceList::groupSettingsPath(const GroupId& group)
 
 void InstanceList::migrateGroupSettingsFiles()
 {
-    // the first version named the files after the percent encoded group name only
-    const auto files = QDir(QDir::current().filePath("groupsettings")).entryInfoList({ "*.cfg" }, QDir::Files);
-    for (const auto& file : files) {
-        if (file.fileName().startsWith("group-") || file.fileName().startsWith("grouphash-")) {
+    // The first version named the files after the percent encoded group name only. Those names can look like the current ones
+    // (a group called "group-x" had the file "group-x.cfg"), so ambiguous files are decided by which group exists, and this is
+    // only done once.
+    const QDir dir(QDir::current().filePath("groupsettings"));
+    const auto marker = dir.filePath(".migrated");
+    if (!dir.exists() || QFileInfo::exists(marker)) {
+        return;
+    }
+    for (const auto& file : dir.entryInfoList({ "*.cfg" }, QDir::Files)) {
+        const auto base = file.completeBaseName();
+        if (base.startsWith("grouphash-")) {
             continue;
         }
-        auto group = QUrl::fromPercentEncoding(file.completeBaseName().toLatin1());
-        auto target = groupSettingsPath(group);
-        if (!QFileInfo::exists(target) && !QFile::rename(file.absoluteFilePath(), target)) {
-            qWarning() << "Failed to migrate the settings of group" << group;
+        const auto oldName = QUrl::fromPercentEncoding(base.toLatin1());
+        if (base.startsWith("group-")) {
+            const auto newName = QUrl::fromPercentEncoding(base.mid(6).toLatin1());
+            // current name of an existing group, or nothing tells it is an old one: keep it
+            if (m_groupNameCache.contains(newName) || !m_groupNameCache.contains(oldName)) {
+                continue;
+            }
         }
+        auto target = groupSettingsPath(oldName);
+        if (target != file.absoluteFilePath() && !QFileInfo::exists(target) && !QFile::rename(file.absoluteFilePath(), target)) {
+            qWarning() << "Failed to migrate the settings of group" << oldName;
+        }
+    }
+    if (auto written = FS::write(marker, QByteArray()); !written) {
+        qWarning() << "Could not mark the group settings as migrated:" << written.error();
     }
 }
 
@@ -953,7 +970,6 @@ void InstanceList::saveGroupList()
 void InstanceList::loadGroupList()
 {
     qDebug() << "Will load group list now.";
-    migrateGroupSettingsFiles();
 
     QString groupFileName = QDir::current().filePath("instgroups.json");
 
@@ -1044,6 +1060,8 @@ void InstanceList::loadGroupList()
         m_collapsedGroups.insert("");
     }
     m_groupsLoaded = true;
+    // needs the group names
+    migrateGroupSettingsFiles();
     qDebug() << "Group list loaded.";
 
     if (migratingLegacyGroups) {

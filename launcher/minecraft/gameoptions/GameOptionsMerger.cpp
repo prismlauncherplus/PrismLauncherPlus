@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QRegularExpression>
+
 namespace GameOptionsMerger {
 
 namespace {
@@ -39,7 +41,13 @@ std::optional<QString> chooseBand(const QString& key,
     if (variants.size() == 1) {
         return variants.firstKey();
     }
-    // the value written by the closest Minecraft version, or the most recent one if the version isn't known
+    // the value written by the closest Minecraft version; if that doesn't decide (unknown versions, equally close), the most recent one
+    auto distance = [&client](const GameOptionValue& value) -> std::optional<int> {
+        if (!client.dataVersion || !value.dataVersion) {
+            return std::nullopt;
+        }
+        return std::abs(*value.dataVersion - *client.dataVersion);
+    };
     std::optional<QString> best;
     for (auto iter = variants.begin(); iter != variants.end(); ++iter) {
         if (!best) {
@@ -47,13 +55,11 @@ std::optional<QString> chooseBand(const QString& key,
             continue;
         }
         const auto& current = variants[*best];
-        if (client.dataVersion && iter->dataVersion && current.dataVersion) {
-            if (std::abs(*iter->dataVersion - *client.dataVersion) < std::abs(*current.dataVersion - *client.dataVersion)) {
-                best = iter.key();
-            }
-        } else if (client.dataVersion && iter->dataVersion && !current.dataVersion) {
+        auto candidateDistance = distance(*iter);
+        auto currentDistance = distance(current);
+        if (candidateDistance && (!currentDistance || *candidateDistance < *currentDistance)) {
             best = iter.key();
-        } else if (!client.dataVersion && iter->updated > current.updated) {
+        } else if (candidateDistance == currentDistance && iter->updated > current.updated) {
             best = iter.key();
         }
     }
@@ -65,13 +71,16 @@ bool isSameValue(const QString& a, const QString& b)
     if (a == b) {
         return true;
     }
-    bool aIsNumber = false;
-    bool bIsNumber = false;
-    const double aNumber = a.trimmed().toDouble(&aIsNumber);
-    const double bNumber = b.trimmed().toDouble(&bIsNumber);
-    if (!aIsNumber || !bIsNumber) {
+    if (!GameOptionsCompat::isNumber(a) || !GameOptionsCompat::isNumber(b)) {
         return false;
     }
+    // whole numbers have to be exactly the same
+    static const QRegularExpression fraction("[.eE]");
+    if (!a.contains(fraction) && !b.contains(fraction)) {
+        return false;
+    }
+    const double aNumber = a.trimmed().toDouble();
+    const double bNumber = b.trimmed().toDouble();
     // e.g. "0.7262599031690141" and "0.72626", the same setting written by versions storing it with different precision
     return std::abs(aNumber - bNumber) <= 1e-5 * std::max({ 1.0, std::abs(aNumber), std::abs(bNumber) });
 }

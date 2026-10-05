@@ -324,6 +324,40 @@ class GameOptionsTest : public QObject {
         QCOMPARE(changes[0].key, QString("gamma"));
     }
 
+    void test_bandChoiceFallsBackToTheMostRecentValue()
+    {
+        GameOptionsProfile profile;
+        const auto older = QDateTime::currentDateTimeUtc().addDays(-1);
+        const auto newer = QDateTime::currentDateTimeUtc();
+        // no data versions to compare: the most recent value wins, not the alphabetically first band
+        profile.setValue("someModOption", "1", std::nullopt, older);
+        profile.setValue("someModOption", "enabled", std::nullopt, newer);
+        auto applied = GameOptionsMerger::apply(profile, OptionsFile(), ClientFormat::detect(OptionsFile(), 4000));
+        QCOMPARE(applied.file.value("someModOption"), QString("enabled"));
+
+        // equally close versions: the most recent value wins
+        profile.setValue("other", "1", 3990, older);
+        profile.setValue("other", "on", 4010, newer);
+        applied = GameOptionsMerger::apply(profile, OptionsFile(), ClientFormat::detect(OptionsFile(), 4000));
+        QCOMPARE(applied.file.value("other"), QString("on"));
+    }
+
+    void test_numbers()
+    {
+        QVERIFY(isNumber("0.5"));
+        QVERIFY(isNumber("-100"));
+        QVERIFY(isNumber("1e-5"));
+        QVERIFY(!isNumber("nan"));
+        QVERIFY(!isNumber("inf"));
+        QVERIFY(!isNumber("1.2.3"));
+        QCOMPARE(bandOf("someOption", "nan"), QString("word"));
+        // whole numbers are compared exactly, fractions with a tolerance
+        auto changes =
+            GameOptionsMerger::collectChanges({ { "a", "100000" }, { "b", "0.5" } }, OptionsFile::parse("a:100001\nb:0.500001\n"));
+        QCOMPARE(changes.size(), 1);
+        QCOMPARE(changes[0].key, QString("a"));
+    }
+
     void test_collectChanges()
     {
         auto modern = OptionsFile::parse(modernOptions);

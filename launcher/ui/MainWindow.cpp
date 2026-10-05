@@ -1294,6 +1294,13 @@ void MainWindow::setSelectedInstancesByIds(const QStringList& ids)
     }
     if (!first.isValid())
         return;
+    // make the first one in display order current, which is also what the selection picks as target, so it's only set once
+    for (const auto& index : view->visibleIndexesInOrder()) {
+        if (selection.contains(index)) {
+            first = index;
+            break;
+        }
+    }
     view->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
     view->selectionModel()->setCurrentIndex(first, QItemSelectionModel::NoUpdate);
 }

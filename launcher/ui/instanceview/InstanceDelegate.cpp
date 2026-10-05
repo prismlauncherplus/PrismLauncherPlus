@@ -289,8 +289,10 @@ void ListViewDelegate::setModelData(QWidget* editor, QAbstractItemModel* model, 
     text.truncate(128);
     if (text.size() != 0) {
         const auto before = model->data(index).toString();
+        // read before renaming: the view is sorted by name, so afterwards the index may point at another instance
+        const auto instanceId = index.data(InstanceList::InstanceIDRole).toString();
         model->setData(index, text);
-        emit textChanged(index.data(InstanceList::InstanceIDRole).toString(), before, text);
+        emit textChanged(instanceId, before, text);
     }
 }
 

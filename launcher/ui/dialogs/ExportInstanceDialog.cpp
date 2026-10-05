@@ -251,6 +251,7 @@ void exportInstancesToZips(const QStringList& instanceIds, QWidget* parent)
 
     auto task = makeShared<ConcurrentTask>(QObject::tr("Exporting instances"), 1);
     QStringList collectFailures;
+    int exports = 0;
     for (const auto& [id, output] : outputs) {
         auto* instance = APPLICATION->instances()->getInstanceById(id);
         if (!instance)
@@ -267,6 +268,7 @@ void exportInstancesToZips(const QStringList& instanceIds, QWidget* parent)
             continue;
         }
         task->addTask(makeShared<MMCZip::ExportToZipTask>(output, instance->instanceRoot(), files, "", true));
+        exports++;
     }
 
     if (!collectFailures.isEmpty()) {
@@ -274,9 +276,9 @@ void exportInstancesToZips(const QStringList& instanceIds, QWidget* parent)
                                      QObject::tr("Unable to export the following instance(s):\n\n%1").arg(collectFailures.join('\n')),
                                      QMessageBox::Critical)
             ->show();
-        if (collectFailures.size() == outputs.size())
-            return;
     }
+    if (exports == 0)
+        return;
 
     QObject::connect(task.get(), &Task::failed, parent, [parent](QString reason) {
         CustomMessageBox::selectable(parent, QObject::tr("Error"), reason, QMessageBox::Critical)->show();
