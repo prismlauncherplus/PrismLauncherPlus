@@ -293,6 +293,13 @@
                   </property>
                  </widget>
                 </item>
+                <item>
+                 <widget class="QPushButton" name="manageGameOptionsButton">
+                  <property name="text">
+                   <string>&amp;Manage Profiles...</string>
+                  </property>
+                 </widget>
+                </item>
                </layout>
               </item>
               <item>

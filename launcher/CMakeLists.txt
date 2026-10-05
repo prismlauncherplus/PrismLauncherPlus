@@ -953,6 +953,8 @@ SET(LAUNCHER_SOURCES
     ui/pages/global/JavaPage.cpp
     ui/pages/global/JavaPage.h
     ui/pages/global/LanguagePage.cpp
+    ui/pages/global/GameOptionsProfilesPage.cpp
+    ui/pages/global/GameOptionsProfilesPage.h
     ui/pages/global/LanguagePage.h
     ui/pages/global/MinecraftPage.h
     ui/pages/global/LauncherPage.cpp

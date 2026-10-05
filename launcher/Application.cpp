@@ -61,6 +61,7 @@
 #include "ui/pages/global/AccountListPage.h"
 #include "ui/pages/global/AppearancePage.h"
 #include "ui/pages/global/ExternalToolsPage.h"
+#include "ui/pages/global/GameOptionsProfilesPage.h"
 #include "ui/pages/global/JavaPage.h"
 #include "ui/pages/global/LanguagePage.h"
 #include "ui/pages/global/LauncherPage.h"
@@ -935,6 +936,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             m_globalSettingsProvider->addPage<LanguagePage>();
             m_globalSettingsProvider->addPage<AppearancePage>();
             m_globalSettingsProvider->addPage<MinecraftPage>();
+            m_globalSettingsProvider->addPage<GameOptionsProfilesPage>();
             m_globalSettingsProvider->addPage<JavaPage>();
             m_globalSettingsProvider->addPage<AccountListPage>();
             m_globalSettingsProvider->addPage<APIPage>();

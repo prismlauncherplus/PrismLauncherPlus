@@ -153,6 +153,10 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, Se
     // Shared game options
     {
         m_ui->gameOptionsGroupBox->setCheckable(isOverrideMode());
+        // in the global settings the profiles page is right next to this one
+        m_ui->manageGameOptionsButton->setVisible(isOverrideMode());
+        connect(m_ui->manageGameOptionsButton, &QPushButton::clicked, this,
+                [this] { APPLICATION->ShowGlobalSettings(this, "game-options"); });
         connect(m_ui->gameOptionsProfileComboBox, &QComboBox::currentIndexChanged, this, &MinecraftSettingsWidget::updateGameOptionsInfo);
         connect(m_ui->gameOptionsGroupBox, &QGroupBox::toggled, this, [this](bool overriding) {
             if (overriding) {
