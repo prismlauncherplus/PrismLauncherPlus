@@ -3,6 +3,9 @@ project(tests)
 ecm_add_test(FileSystem_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME FileSystem)
 
+ecm_add_test(GameOptions_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME GameOptions)
+
 ecm_add_test(InheritedSetting_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME InheritedSetting)
 

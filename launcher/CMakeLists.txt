@@ -276,6 +276,16 @@ set(MINECRAFT_SOURCES
 
     minecraft/GradleSpecifier.h
     minecraft/MinecraftInstance.cpp
+    minecraft/gameoptions/OptionsFile.cpp
+    minecraft/gameoptions/OptionsFile.h
+    minecraft/gameoptions/GameOptionsCompat.cpp
+    minecraft/gameoptions/GameOptionsCompat.h
+    minecraft/gameoptions/GameOptionsProfile.cpp
+    minecraft/gameoptions/GameOptionsProfile.h
+    minecraft/gameoptions/GameOptionsMerger.cpp
+    minecraft/gameoptions/GameOptionsMerger.h
+    minecraft/gameoptions/GameOptionsProfileList.cpp
+    minecraft/gameoptions/GameOptionsProfileList.h
     minecraft/MinecraftInstance.h
     minecraft/LaunchProfile.cpp
     minecraft/LaunchProfile.h
