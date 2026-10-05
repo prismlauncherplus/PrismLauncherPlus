@@ -24,6 +24,10 @@ InstanceCopyTask::InstanceCopyTask(BaseInstance* origInstance, const InstanceCop
             filters += "|";
         filters += "instance.cfg";
     }
+    // the game options session belongs to the original instance
+    if (!filters.isEmpty())
+        filters += "|";
+    filters += "gameoptions-session\\.json";
 
     qDebug() << "CopyFilters:" << filters;
 

@@ -178,6 +178,16 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, Se
         connect(profiles, &QAbstractItemModel::rowsRemoved, this, repopulate);
         connect(profiles, &QAbstractItemModel::layoutChanged, this, repopulate);
         connect(profiles, &QAbstractItemModel::dataChanged, this, repopulate);
+        connect(profiles, &QAbstractItemModel::rowsInserted, this, repopulate);
+        // deleting a profile switches everything using it to no profile; follow that, so saving doesn't bring the old id back
+        connect(profiles, &GameOptionsProfileList::profileRemoved, this, [this](const QString& id) {
+            if (m_ui->gameOptionsProfileComboBox->currentData().toString() == id) {
+                populateGameOptionsProfiles(QString());
+            }
+            if (m_gameOptionsOverride == id) {
+                m_gameOptionsOverride = QString();
+            }
+        });
     }
 
     m_ui->maximizedWarning->hide();

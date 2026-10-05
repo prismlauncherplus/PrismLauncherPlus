@@ -42,6 +42,8 @@ struct Session {
     QString profileId;
     GameOptionsCompat::ClientFormat client;
     QMap<QString, QString> snapshot;
+    /// the game's process, to not collect the changes of a game that is still running after the launcher restarted
+    std::optional<qint64> gamePid;
 
     QJsonObject toJson() const;
     static Result<Session> fromJson(const QJsonObject& json);
@@ -55,11 +57,28 @@ QString optionsPath(MinecraftInstance* instance);
 /// Needed when there is no options.txt yet to tell which version wrote it.
 std::optional<int> dataVersionFromJar(MinecraftInstance* instance);
 
-/// Apply the instance's profile to its options.txt; returns the session if anything is to be synced when the game stops
+/// Apply the instance's profile to its options.txt; returns the session if anything is to be synced when the game stops.
+/// Changes of an earlier session that are not saved yet are dealt with first, and if they still can't be saved, the profile
+/// is not applied (it would overwrite them) and the earlier session continues instead.
 std::optional<Session> start(MinecraftInstance* instance, const Logger& log);
 
-/// Write the options changed since the session started back to the profile, or let the user review them first
-void finish(MinecraftInstance* instance, const Session& session, const Logger& log);
+enum class FinishResult {
+    Done,     ///< the changes were saved or discarded, the session is gone
+    Pending,  ///< the changes are kept in the session file, e.g. because the user didn't review them yet or saving failed
+};
+enum class ReviewMode {
+    Modal,     ///< wait for the user's decision, before launching the game
+    NonModal,  ///< show the review and return, after the game stopped
+};
+
+/// Write the options changed since the session started back to the profile, or let the user review them first.
+/// The session file is only removed once the changes are saved or discarded.
+FinishResult finish(MinecraftInstance* instance, const Session& session, const Logger& log, ReviewMode reviewMode);
+
+/// save the session file again, e.g. once the game's process id is known
+void saveSession(MinecraftInstance* instance, const Session& session);
+/// the user decided about the changes of the instance's session (saved or discarded them)
+void removeSession(const QString& instanceId);
 
 /// finish the sessions left over from a launcher that crashed or quit while the game was running
 void recoverSessions(InstanceList* instances);

@@ -26,8 +26,9 @@
 #include "FileSystem.h"
 
 namespace {
-// how long to wait for another instance writing to the same profile
-constexpr int lockTimeoutMs = 5000;
+// how long to wait for another instance writing to the same profile. This blocks the UI, and write backs that fail are kept
+// and tried again later, so keep it short
+constexpr int lockTimeoutMs = 1000;
 }  // namespace
 
 GameOptionsProfileList::GameOptionsProfileList(QString directory, QObject* parent)
@@ -119,6 +120,7 @@ Result<> GameOptionsProfileList::removeProfile(const QString& id)
     beginRemoveRows(QModelIndex(), static_cast<int>(index), static_cast<int>(index));
     m_profiles.removeAt(index);
     endRemoveRows();
+    emit profileRemoved(id);
     return {};
 }
 
@@ -141,6 +143,7 @@ Result<> GameOptionsProfileList::modifyProfile(const QString& id, const Modifica
         beginRemoveRows(QModelIndex(), static_cast<int>(index), static_cast<int>(index));
         m_profiles.removeAt(index);
         endRemoveRows();
+        emit profileRemoved(id);
         return std::unexpected(QString("the game options profile %1 was deleted").arg(id));
     }
     auto current = readProfile(path);
@@ -212,10 +215,15 @@ Result<QString> GameOptionsProfileList::addProfile(GameOptionsProfile profile)
     if (auto result = writeProfile(profile); !result) {
         return std::unexpected(result.error());
     }
-    beginResetModel();
-    m_profiles.append(profile);
-    sortProfiles();
-    endResetModel();
+    // insert in order, so views keep their selection (a reset would clear it)
+    auto position = std::ranges::upper_bound(m_profiles, profile,
+                                             [](const GameOptionsProfile& a, const GameOptionsProfile& b) {
+                                                 return QString::localeAwareCompare(a.name, b.name) < 0;
+                                             }) -
+                    m_profiles.begin();
+    beginInsertRows(QModelIndex(), static_cast<int>(position), static_cast<int>(position));
+    m_profiles.insert(position, profile);
+    endInsertRows();
     return profile.id;
 }
 

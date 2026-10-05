@@ -17,12 +17,14 @@
  */
 #include "GameOptionsProfilesPage.h"
 
+#include <QDebug>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
 #include <QListView>
+#include <QMenu>
 #include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -50,6 +52,8 @@ GameOptionsProfilesPage::GameOptionsProfilesPage(QWidget* parent) : QWidget(pare
                                    this);
     description->setWordWrap(true);
     layout->addWidget(description);
+    auto* immediateNote = new QLabel(tr("Changes on this page are saved right away."), this);
+    layout->addWidget(immediateNote);
 
     auto* columns = new QHBoxLayout();
     layout->addLayout(columns, 1);
@@ -66,8 +70,12 @@ GameOptionsProfilesPage::GameOptionsProfilesPage(QWidget* parent) : QWidget(pare
     m_duplicateButton = new QPushButton(tr("D&uplicate"), this);
     m_renameButton = new QPushButton(tr("&Rename"), this);
     m_deleteButton = new QPushButton(tr("&Delete"), this);
-    auto* importButton = new QPushButton(tr("&Import from Instance..."), this);
-    importButton->setToolTip(tr("Copy the options of an instance into the selected profile, or into a new one if none is selected"));
+    auto* importButton = new QPushButton(tr("&Import from Instance"), this);
+    importButton->setToolTip(tr("Copy the game options of an instance into a profile"));
+    auto* importMenu = new QMenu(importButton);
+    importMenu->addAction(tr("Into a &New Profile..."), this, [this] { importFromInstance(true); });
+    m_importIntoSelected = importMenu->addAction(tr("Into the &Selected Profile..."), this, [this] { importFromInstance(false); });
+    importButton->setMenu(importMenu);
     for (auto* button : { createButton, m_duplicateButton, m_renameButton, m_deleteButton, importButton }) {
         listColumn->addWidget(button);
     }
@@ -110,18 +118,23 @@ GameOptionsProfilesPage::GameOptionsProfilesPage(QWidget* parent) : QWidget(pare
     connect(m_duplicateButton, &QPushButton::clicked, this, &GameOptionsProfilesPage::duplicateProfile);
     connect(m_renameButton, &QPushButton::clicked, this, &GameOptionsProfilesPage::renameProfile);
     connect(m_deleteButton, &QPushButton::clicked, this, &GameOptionsProfilesPage::deleteProfile);
-    connect(importButton, &QPushButton::clicked, this, &GameOptionsProfilesPage::importFromInstance);
     connect(changeTargetButton, &QPushButton::clicked, this, &GameOptionsProfilesPage::changeTargetVersion);
     connect(m_clearTargetButton, &QPushButton::clicked, this, &GameOptionsProfilesPage::clearTargetVersion);
-    connect(m_list->selectionModel(), &QItemSelectionModel::currentChanged, this, &GameOptionsProfilesPage::updateDetails);
-    // profiles also change when instances write their options back
-    connect(profiles, &QAbstractItemModel::dataChanged, this, &GameOptionsProfilesPage::updateDetails);
-    connect(profiles, &QAbstractItemModel::modelReset, this, &GameOptionsProfilesPage::updateDetails);
-    connect(profiles, &QAbstractItemModel::rowsRemoved, this, &GameOptionsProfilesPage::updateDetails);
+    connect(m_list->selectionModel(), &QItemSelectionModel::currentChanged, this, [this] { updateDetails(); });
+    // profiles also change when instances write their options back, which doesn't change what uses them
+    connect(profiles, &QAbstractItemModel::dataChanged, this, [this] { updateDetails(false); });
+    connect(profiles, &QAbstractItemModel::modelReset, this, [this] { updateDetails(); });
+    connect(profiles, &QAbstractItemModel::rowsRemoved, this, [this] { updateDetails(); });
 
     if (profiles->rowCount() > 0) {
         m_list->setCurrentIndex(profiles->index(0));
     }
+    updateDetails();
+}
+
+void GameOptionsProfilesPage::openedImpl()
+{
+    // the profiles may be used differently since the page was shown last
     updateDetails();
 }
 
@@ -146,9 +159,12 @@ GameOptionsProfilesPage::Usage GameOptionsProfilesPage::usageOf(const QString& p
     usage.global = APPLICATION->settings()->get("GameOptionsProfile").toString() == profileId;
     auto* instances = APPLICATION->instances();
     for (const auto& group : instances->getGroups()) {
+        // only groups with settings can use a profile, and this doesn't create settings for the others
+        if (!instances->groupHasSettings(group)) {
+            continue;
+        }
         auto* settings = instances->groupSettings(group);
-        if (settings && settings->get("OverrideGameOptionsProfile").toBool() &&
-            settings->get("GameOptionsProfile").toString() == profileId) {
+        if (settings->get("OverrideGameOptionsProfile").toBool() && settings->get("GameOptionsProfile").toString() == profileId) {
             usage.groups << group;
         }
     }
@@ -177,13 +193,14 @@ void GameOptionsProfilesPage::select(const QString& profileId)
     }
 }
 
-void GameOptionsProfilesPage::updateDetails()
+void GameOptionsProfilesPage::updateDetails(bool refreshUsage)
 {
     const auto* profile = APPLICATION->gameOptionsProfiles()->profile(selectedId());
     m_details->setEnabled(profile != nullptr);
     m_duplicateButton->setEnabled(profile != nullptr);
     m_renameButton->setEnabled(profile != nullptr);
     m_deleteButton->setEnabled(profile != nullptr);
+    m_importIntoSelected->setEnabled(profile != nullptr);
     m_options->clear();
     if (!profile) {
         m_name->clear();
@@ -195,7 +212,9 @@ void GameOptionsProfilesPage::updateDetails()
     m_name->setText(profile->name);
     m_targetVersion->setText(profile->targetVersion.isEmpty() ? tr("Any") : profile->targetVersion);
     m_clearTargetButton->setEnabled(!profile->targetVersion.isEmpty());
-    m_usage->setText(usageOf(profile->id).describe());
+    if (refreshUsage) {
+        m_usage->setText(usageOf(profile->id).describe());
+    }
 
     m_options->setSortingEnabled(false);
     for (auto option = profile->options.begin(); option != profile->options.end(); ++option) {
@@ -236,6 +255,8 @@ void GameOptionsProfilesPage::duplicateProfile()
     if (!profile) {
         return;
     }
+    // the selection can change while the dialog is open
+    const auto originalId = profile->id;
     bool ok = false;
     auto name = QInputDialog::getText(this, tr("Duplicate Game Options Profile"), tr("Name:"), QLineEdit::Normal,
                                       tr("Copy of %1").arg(profile->name), &ok)
@@ -243,7 +264,7 @@ void GameOptionsProfilesPage::duplicateProfile()
     if (!ok || name.isEmpty()) {
         return;
     }
-    auto id = APPLICATION->gameOptionsProfiles()->duplicateProfile(selectedId(), name);
+    auto id = APPLICATION->gameOptionsProfiles()->duplicateProfile(originalId, name);
     if (!id) {
         showError(tr("Could not duplicate the profile"), id.error());
         return;
@@ -289,6 +310,10 @@ void GameOptionsProfilesPage::deleteProfile()
         return;
     }
 
+    if (auto result = APPLICATION->gameOptionsProfiles()->removeProfile(id); !result) {
+        showError(tr("Could not delete the profile"), result.error());
+        return;
+    }
     // switch everything using it to "no profile", rather than silently falling back to another profile
     if (usage.global) {
         APPLICATION->settings()->set("GameOptionsProfile", QString());
@@ -301,13 +326,20 @@ void GameOptionsProfilesPage::deleteProfile()
             instance->settings()->set("GameOptionsProfile", QString());
         }
     }
-    if (auto result = APPLICATION->gameOptionsProfiles()->removeProfile(id); !result) {
-        showError(tr("Could not delete the profile"), result.error());
-    }
 }
 
-void GameOptionsProfilesPage::importFromInstance()
+void GameOptionsProfilesPage::importFromInstance(bool intoNewProfile)
 {
+    auto* profiles = APPLICATION->gameOptionsProfiles();
+    const auto* selected = profiles->profile(selectedId());
+    if (!intoNewProfile && !selected) {
+        return;
+    }
+    const QString targetId = intoNewProfile ? QString() : selected->id;
+    const QString targetName = intoNewProfile ? QString() : selected->name;
+    const QString targetVersion = intoNewProfile ? QString() : selected->targetVersion;
+
+    // instances can share a name, those are told apart by their folder
     auto* instances = APPLICATION->instances();
     QStringList names;
     QStringList ids;
@@ -318,13 +350,17 @@ void GameOptionsProfilesPage::importFromInstance()
     if (names.isEmpty()) {
         return;
     }
+    QStringList labels;
+    for (int i = 0; i < names.size(); i++) {
+        labels << (names.count(names[i]) > 1 ? tr("%1 (folder %2)").arg(names[i], ids[i]) : names[i]);
+    }
     bool ok = false;
-    auto chosen = QInputDialog::getItem(this, tr("Import Game Options"), tr("Copy the game options of:"), names, 0, false, &ok);
+    auto chosen = QInputDialog::getItem(this, tr("Import Game Options"), tr("Copy the game options of:"), labels, 0, false, &ok);
     if (!ok) {
         return;
     }
     // look the instance up again, it may have been removed while the dialog was open
-    auto* instance = instances->getInstanceById(ids.value(names.indexOf(chosen)));
+    auto* instance = instances->getInstanceById(ids.value(labels.indexOf(chosen)));
     if (!instance) {
         return;
     }
@@ -335,22 +371,31 @@ void GameOptionsProfilesPage::importFromInstance()
                   file ? tr("%1 has no game options yet. Launch it once to create them.").arg(instance->name()) : file.error());
         return;
     }
-    const auto client = GameOptionsCompat::ClientFormat::detect(*file, GameOptionsSync::dataVersionFromJar(instance));
+    // the file normally says which version wrote it, the client jar is only needed when it doesn't
+    const auto fallbackDataVersion = file->dataVersion() ? std::nullopt : GameOptionsSync::dataVersionFromJar(instance);
+    const auto client = GameOptionsCompat::ClientFormat::detect(*file, fallbackDataVersion);
     const auto minecraftVersion = instance->getPackProfile()->getComponentVersion("net.minecraft");
 
-    auto* profiles = APPLICATION->gameOptionsProfiles();
-    auto profileId = selectedId();
-    if (const auto* profile = profiles->profile(profileId)) {
-        auto response = CustomMessageBox::selectable(this, tr("Import Game Options"),
-                                                     tr("Copy the game options of \"%1\" into the profile \"%2\"? Options the profile "
-                                                        "already has for this Minecraft version are replaced.")
-                                                         .arg(instance->name(), profile->name),
-                                                     QMessageBox::Question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
-                            ->exec();
-        if (response != QMessageBox::Yes) {
-            return;
-        }
-    } else {
+    QString question = intoNewProfile ? tr("Create a new profile with the game options of \"%1\"?").arg(instance->name())
+                                      : tr("Copy the game options of \"%1\" into the profile \"%2\"? Options the profile already "
+                                           "has for this Minecraft version are replaced.")
+                                            .arg(instance->name(), targetName);
+    if (!intoNewProfile && !targetVersion.isEmpty() && !minecraftVersion.isEmpty() && targetVersion != minecraftVersion) {
+        question += "\n\n" + tr("The profile is meant for Minecraft %1, but this instance uses %2.").arg(targetVersion, minecraftVersion);
+    }
+    if (!client.dataVersion) {
+        question += "\n\n" + tr("The Minecraft version that wrote these options can't be detected, so they may be given to "
+                                "versions that read them differently.");
+    }
+    auto response = CustomMessageBox::selectable(this, tr("Import Game Options"), question, QMessageBox::Question,
+                                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+                        ->exec();
+    if (response != QMessageBox::Yes) {
+        return;
+    }
+
+    QString profileId = targetId;
+    if (intoNewProfile) {
         auto created = profiles->createProfile(instance->name(), minecraftVersion);
         if (!created) {
             showError(tr("Could not create the profile"), created.error());
@@ -367,6 +412,12 @@ void GameOptionsProfilesPage::importFromInstance()
         }
     });
     if (!result) {
+        if (intoNewProfile) {
+            // don't leave an empty profile behind
+            if (auto removed = profiles->removeProfile(profileId); !removed) {
+                qWarning() << "Could not remove the empty profile" << profileId << ":" << removed.error();
+            }
+        }
         showError(tr("Could not import the game options"), result.error());
         return;
     }

@@ -22,5 +22,7 @@
 
 void QuitAfterGameStop::executeTask()
 {
+    // finish the launch first, so the other steps can clean up (e.g. save the changed game options) before the launcher quits
+    emitSucceeded();
     APPLICATION->quit();
 }

@@ -102,6 +102,7 @@
 #include <QStringList>
 #include <QStringLiteral>
 #include <QStyleFactory>
+#include <QTimer>
 #include <QTranslator>
 #include <QWindow>
 #include <utility>
@@ -1044,8 +1045,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     {
         m_gameOptionsProfiles = std::make_unique<GameOptionsProfileList>(QDir("gameoptions").absolutePath());
         m_gameOptionsProfiles->load();
-        // save the changes of games that were still running when the launcher stopped last time
-        GameOptionsSync::recoverSessions(m_instances.get());
+        // save the changes of games that were still running when the launcher stopped last time.
+        // once everything is set up, as it may show the review dialog
+        QTimer::singleShot(0, this, [this] { GameOptionsSync::recoverSessions(m_instances.get()); });
         qInfo() << "<> Game options profiles loaded.";
     }
 

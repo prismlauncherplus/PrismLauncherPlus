@@ -74,7 +74,7 @@ void setupDefaultIgnores(FileIgnoreProxy* proxy, BaseInstance* instance)
     for (auto path : { "logs", "crash-reports", ".cache", ".fabric", ".quilt" }) {
         proxy->ignoreFilesWithPath().insert(FS::PathCombine(prefix, path));
     }
-    proxy->ignoreFilesWithName().append({ ".DS_Store", "thumbs.db", "Thumbs.db" });
+    proxy->ignoreFilesWithName().append({ ".DS_Store", "thumbs.db", "Thumbs.db", "gameoptions-session.json" });
     proxy->loadBlockedPathsFromFile(ignoreFileNameFor(instance));
 }
 }  // namespace

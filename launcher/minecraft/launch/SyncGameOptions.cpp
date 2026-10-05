@@ -22,6 +22,15 @@
 void SyncGameOptions::executeTask()
 {
     m_session = GameOptionsSync::start(m_parent->instance(), [this](const QString& message, MessageLevel level) { log(message, level); });
+    if (m_session) {
+        // remember the game's process, so a restarted launcher doesn't collect the changes while the game still runs
+        connect(m_parent, &LaunchTask::pidChanged, this, [this](qint64 pid) {
+            if (m_session && pid > 0) {
+                m_session->gamePid = pid;
+                GameOptionsSync::saveSession(m_parent->instance(), *m_session);
+            }
+        });
+    }
     emitSucceeded();
 }
 
@@ -30,7 +39,9 @@ void SyncGameOptions::finalize()
     if (!m_session) {
         return;
     }
-    GameOptionsSync::finish(m_parent->instance(), *m_session, [this](const QString& message, MessageLevel level) { log(message, level); });
+    GameOptionsSync::finish(
+        m_parent->instance(), *m_session, [this](const QString& message, MessageLevel level) { log(message, level); },
+        GameOptionsSync::ReviewMode::NonModal);
     m_session.reset();
 }
 

@@ -60,6 +60,10 @@ class GameOptionsProfileList : public QAbstractListModel {
     Result<> setProfileInfo(const QString& id, const QString& name, const QString& targetVersion);
     Result<> applyChanges(const QString& id, const QList<GameOptionChange>& changes, const GameOptionsCompat::ClientFormat& client);
 
+   signals:
+    /// the profile was deleted (in the launcher or on disk); whatever uses it should use no profile
+    void profileRemoved(const QString& id);
+
    private:
     QString profilePath(const QString& id) const;
     Result<GameOptionsProfile> readProfile(const QString& path) const;

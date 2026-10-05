@@ -63,7 +63,11 @@ class LaunchTask : public Task {
 
     MinecraftInstance* instance() { return m_instance; }
 
-    void setPid(qint64 pid) { m_pid = pid; }
+    void setPid(qint64 pid)
+    {
+        m_pid = pid;
+        emit pidChanged(pid);
+    }
 
     qint64 pid() { return m_pid; }
 
@@ -95,6 +99,8 @@ class LaunchTask : public Task {
     virtual void emitSucceeded() override;
 
    signals:
+    /// the process id of the game, -1 when it isn't running
+    void pidChanged(qint64 pid);
     /**
      * @brief emitted when the launch preparations are done
      */

@@ -19,24 +19,40 @@
 
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QHeaderView>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "Application.h"
 #include "minecraft/gameoptions/GameOptionsProfileList.h"
+#include "minecraft/gameoptions/GameOptionsSync.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
-GameOptionsReviewDialog::GameOptionsReviewDialog(const QString& instanceName,
+namespace {
+QHash<QString, QPointer<GameOptionsReviewDialog>>& openDialogs()
+{
+    static QHash<QString, QPointer<GameOptionsReviewDialog>> dialogs;
+    return dialogs;
+}
+}  // namespace
+
+GameOptionsReviewDialog::GameOptionsReviewDialog(QString instanceId,
+                                                 const QString& instanceName,
                                                  QString profileId,
                                                  QList<GameOptionChange> changes,
                                                  GameOptionsCompat::ClientFormat client,
                                                  QWidget* parent)
-    : QDialog(parent), m_profileId(std::move(profileId)), m_changes(std::move(changes)), m_client(client)
+    : QDialog(parent)
+    , m_instanceId(std::move(instanceId))
+    , m_profileId(std::move(profileId))
+    , m_changes(std::move(changes))
+    , m_client(client)
 {
-    setAttribute(Qt::WA_DeleteOnClose);
+    openDialogs().insert(m_instanceId, this);
     setWindowTitle(tr("Changed Game Options - %1").arg(instanceName));
     resize(640, 480);
 
@@ -82,12 +98,35 @@ GameOptionsReviewDialog::GameOptionsReviewDialog(const QString& instanceName,
     selectionButtons->addStretch();
     layout->addLayout(selectionButtons);
 
+    auto* hint = new QLabel(tr("Closing this window keeps the changes, to decide about them later."), this);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Discard, this);
     buttons->button(QDialogButtonBox::Save)->setText(tr("&Save Selected"));
-    buttons->button(QDialogButtonBox::Discard)->setText(tr("&Discard"));
+    buttons->button(QDialogButtonBox::Discard)->setText(tr("&Discard All"));
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(buttons->button(QDialogButtonBox::Discard), &QPushButton::clicked, this, &QDialog::reject);
+    connect(buttons->button(QDialogButtonBox::Discard), &QPushButton::clicked, this, &GameOptionsReviewDialog::discard);
     layout->addWidget(buttons);
+}
+
+GameOptionsReviewDialog::~GameOptionsReviewDialog()
+{
+    if (openDialogs().value(m_instanceId) == this) {
+        openDialogs().remove(m_instanceId);
+    }
+}
+
+GameOptionsReviewDialog* GameOptionsReviewDialog::openFor(const QString& instanceId)
+{
+    auto dialog = openDialogs().value(instanceId);
+    return dialog && dialog->isVisible() ? dialog.data() : nullptr;
+}
+
+void GameOptionsReviewDialog::discard()
+{
+    GameOptionsSync::removeSession(m_instanceId);
+    done(Discarded);
 }
 
 void GameOptionsReviewDialog::setAllChecked(bool checked)
@@ -110,5 +149,6 @@ void GameOptionsReviewDialog::accept()
         CustomMessageBox::selectable(this, tr("Could not save the game options"), result.error(), QMessageBox::Critical)->exec();
         return;
     }
+    GameOptionsSync::removeSession(m_instanceId);
     QDialog::accept();
 }

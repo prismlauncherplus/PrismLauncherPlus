@@ -36,7 +36,7 @@ class GameOptionsProfilesPage : public QWidget, public BasePage {
     QString displayName() const override { return tr("Game Options"); }
     QIcon icon() const override { return QIcon::fromTheme("settings"); }
     QString id() const override { return "game-options"; }
-    QString helpPage() const override { return "Game-options-profiles"; }
+    void openedImpl() override;
 
    private:
     /// what uses a profile: the global default, groups and instances
@@ -51,14 +51,16 @@ class GameOptionsProfilesPage : public QWidget, public BasePage {
 
     QString selectedId() const;
     void select(const QString& profileId);
-    void updateDetails();
+    /// refresh the details of the selected profile; finding out what uses it means going through all instances,
+    /// so that is only done when asked for
+    void updateDetails(bool refreshUsage = true);
     void showError(const QString& title, const QString& error);
 
     void createProfile();
     void duplicateProfile();
     void renameProfile();
     void deleteProfile();
-    void importFromInstance();
+    void importFromInstance(bool intoNewProfile);
     void changeTargetVersion();
     void clearTargetVersion();
 
@@ -66,6 +68,7 @@ class GameOptionsProfilesPage : public QWidget, public BasePage {
     QPushButton* m_duplicateButton;
     QPushButton* m_renameButton;
     QPushButton* m_deleteButton;
+    QAction* m_importIntoSelected;
     QWidget* m_details;
     QLabel* m_name;
     QLabel* m_targetVersion;
