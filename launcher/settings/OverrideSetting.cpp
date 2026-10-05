@@ -48,5 +48,11 @@ void OverrideSetting::reset()
 
 void OverrideSetting::set(QVariant value)
 {
+    // without a stored value the setting reads as the inherited one, so setting the same value would not store anything.
+    // it has to be stored anyway, otherwise the override would follow the parent when the parent changes
+    if (!hasStoredValue()) {
+        emit SettingChanged(*this, value);
+        return;
+    }
     Setting::set(value);
 }

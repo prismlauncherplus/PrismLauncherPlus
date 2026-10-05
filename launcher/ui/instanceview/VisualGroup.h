@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <QFontMetrics>
 #include <QList>
 #include <QRect>
 #include <QString>
@@ -110,6 +111,9 @@ struct VisualGroup {
 
     /// the area of the settings button next to the group name, for a header starting at the given height
     QRect settingsButtonRect(int headerTop) const;
+
+    /// the width of the group name in the header, which is cut off when it doesn't fit next to the settings button
+    int headerTextWidth(const QFontMetrics& fontMetrics) const;
 
     QList<QModelIndex> items() const;
 };

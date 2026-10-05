@@ -47,18 +47,22 @@ QVariant PassthroughSetting::get() const
     return m_other->get();
 }
 
+// only the layer the value belongs to is changed: an instance (or group) with its own Java doesn't overwrite
+// the information cached for the Java its parent uses, which would make every other instance check Java again
 void PassthroughSetting::reset()
 {
     if (isOverriding()) {
         Setting::reset();
+    } else {
+        m_other->reset();
     }
-    m_other->reset();
 }
 
 void PassthroughSetting::set(QVariant value)
 {
     if (isOverriding()) {
         Setting::set(value);
+    } else {
+        m_other->set(value);
     }
-    m_other->set(value);
 }

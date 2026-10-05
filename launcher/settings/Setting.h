@@ -102,8 +102,11 @@ class Setting : public QObject {
     virtual void reset();
 
    protected:
+    /// whether the storage has a value for this setting, as opposed to falling back to the default
+    bool hasStoredValue() const;
+
     friend class SettingsObject;
-    SettingsObject* m_storage;
+    SettingsObject* m_storage = nullptr;
     QStringList m_synonyms;
     QVariant m_defVal;
 };

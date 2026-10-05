@@ -62,6 +62,16 @@ AutoInstallJava::AutoInstallJava(LaunchTask* parent)
 void AutoInstallJava::executeTask()
 {
     auto settings = m_instance->settings();
+    // A Java picked automatically for the instance is only a fallback, the Java location set for its group takes priority.
+    // Without this, instances that switched Java automatically before joining the group would keep their own Java.
+    if (settings->get("AutomaticJava").toBool() && settings->get("OverrideJavaLocation").toBool()) {
+        if (auto* group = m_instance->groupSettings(); group && group->get("OverrideJavaLocation").toBool()) {
+            settings->set("OverrideJavaLocation", false);
+            settings->set("AutomaticJava", false);
+            settings->reset("JavaPath");
+            emit logLine(tr("Using the Java of the instance's group instead of the automatically selected one."), MessageLevel::Launcher);
+        }
+    }
     if (!APPLICATION->settings()->get("AutomaticJavaSwitch").toBool() ||
         (m_instance->isOverriding("OverrideJavaLocation") && QFileInfo::exists(settings->get("JavaPath").toString()))) {
         emitSucceeded();

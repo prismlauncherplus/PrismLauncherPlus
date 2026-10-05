@@ -153,8 +153,19 @@ QRect VisualGroup::settingsButtonRect(int headerTop) const
     const QFontMetrics fontMetrics(font);
     const int textOffsetLeft = (fontMetrics.height() / 2 + 7) * 2;
     const int size = fontMetrics.height();
-    const int left = textOffsetLeft + fontMetrics.horizontalAdvance(text) + 6;
+    const int left = textOffsetLeft + headerTextWidth(fontMetrics) + 6;
     return QRect(left, headerTop + 7, size, size);
+}
+
+int VisualGroup::headerTextWidth(const QFontMetrics& fontMetrics) const
+{
+    // long names are elided, so the settings button always stays inside the view
+    const int textOffsetLeft = (fontMetrics.height() / 2 + 7) * 2;
+    int available = view->viewport()->width() - view->m_rightMargin - 7 - textOffsetLeft;
+    if (hasSettingsButton()) {
+        available -= fontMetrics.height() + 6;
+    }
+    return std::clamp(fontMetrics.horizontalAdvance(text), 0, std::max(0, available));
 }
 
 void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& option) const
@@ -178,7 +189,9 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
     const int arrowOffsetLeft = fontMetrics.height() / 2 + 7;
     const int textOffsetLeft = arrowOffsetLeft * 2;
     const int centerHeight = optRect.top() + fontMetrics.height() / 2;
-    const QString& textToDraw = text.isEmpty() ? QObject::tr("Ungrouped") : text;
+    const QString textToDraw = text.isEmpty()        ? QObject::tr("Ungrouped")
+                               : hasSettingsButton() ? fontMetrics.elidedText(text, Qt::ElideRight, headerTextWidth(fontMetrics))
+                                                     : text;
 
     // BEGIN: arrow
     {

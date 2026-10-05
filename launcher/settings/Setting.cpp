@@ -31,6 +31,11 @@ QVariant Setting::get() const
     }
 }
 
+bool Setting::hasStoredValue() const
+{
+    return m_storage && m_storage->retrieveValue(*this).isValid();
+}
+
 QVariant Setting::defValue() const
 {
     return m_defVal;

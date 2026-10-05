@@ -89,6 +89,29 @@ class InheritedSettingTest : public QObject {
         QCOMPARE(m_instance->get("JavaPath").toString(), QString("java"));
     }
 
+    void test_overrideEqualToParentIsKept()
+    {
+        m_group->set("OverrideMemory", true);
+        m_group->set("MaxMemAlloc", 8192);
+        // override with the value that is inherited anyway
+        m_instance->set("OverrideMemory", true);
+        m_instance->set("MaxMemAlloc", 8192);
+        // the override must not follow the group
+        m_group->set("MaxMemAlloc", 4096);
+        QCOMPARE(m_instance->get("MaxMemAlloc").toInt(), 8192);
+    }
+
+    void test_overrideWithEmptyValueSurvivesReload()
+    {
+        // global and group have no profile, the instance opts out explicitly
+        m_instance->set("OverrideGameOptionsProfile", true);
+        m_instance->set("GameOptionsProfile", "");
+        m_instance->reload();
+        m_group->set("OverrideGameOptionsProfile", true);
+        m_group->set("GameOptionsProfile", "group-profile");
+        QCOMPARE(m_instance->get("GameOptionsProfile").toString(), QString());
+    }
+
     void test_gameOptionsProfileSelection()
     {
         m_global->set("GameOptionsProfile", "global-profile");
@@ -110,15 +133,13 @@ class InheritedSettingTest : public QObject {
         m_instance->set("JavaVersion", "17");
         QCOMPARE(m_global->get("JavaVersion").toString(), QString("17"));
 
-        // the group overrides it: java info is cached in the group (passthrough settings also update their parent)
+        // the group overrides it: java info is cached in the group only, the global cache stays valid for the global java
         m_group->set("OverrideJavaLocation", true);
         m_instance->set("JavaVersion", "21");
         QCOMPARE(m_group->get("JavaVersion").toString(), QString("21"));
         QCOMPARE(m_instance->get("JavaVersion").toString(), QString("21"));
 
-        // the instance reads the group's cached value, even when the global one differs
-        m_global->set("JavaVersion", "8");
-        QCOMPARE(m_instance->get("JavaVersion").toString(), QString("21"));
+        QCOMPARE(m_global->get("JavaVersion").toString(), QString("17"));
     }
 };
 

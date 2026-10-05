@@ -36,6 +36,7 @@
 
 #include "InstanceList.h"
 
+#include <QCryptographicHash>
 #include <QDebug>
 #include <QDirListing>
 #include <QFile>
@@ -299,8 +300,31 @@ QStringList InstanceList::getGroups()
 
 QString InstanceList::groupSettingsPath(const GroupId& group)
 {
-    // percent encoding keeps the file name valid and unique for any group name
-    return QDir::current().filePath(FS::PathCombine("groupsettings", QString::fromLatin1(QUrl::toPercentEncoding(group)) + ".cfg"));
+    // Percent encoding keeps the file name valid for any group name. Upper case letters are encoded too, so names that only
+    // differ in case get different files on case insensitive file systems. The prefix avoids reserved names (e.g. "con" on
+    // Windows), and very long names use a hash to stay within file name length limits.
+    static const QByteArray upperCase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto fileName = "group-" + QString::fromLatin1(QUrl::toPercentEncoding(group, QByteArray(), upperCase));
+    if (fileName.size() > 200) {
+        fileName = "grouphash-" + QString::fromLatin1(QCryptographicHash::hash(group.toUtf8(), QCryptographicHash::Sha1).toHex());
+    }
+    return QDir::current().filePath(FS::PathCombine("groupsettings", fileName + ".cfg"));
+}
+
+void InstanceList::migrateGroupSettingsFiles()
+{
+    // the first version named the files after the percent encoded group name only
+    const auto files = QDir(QDir::current().filePath("groupsettings")).entryInfoList({ "*.cfg" }, QDir::Files);
+    for (const auto& file : files) {
+        if (file.fileName().startsWith("group-") || file.fileName().startsWith("grouphash-")) {
+            continue;
+        }
+        auto group = QUrl::fromPercentEncoding(file.completeBaseName().toLatin1());
+        auto target = groupSettingsPath(group);
+        if (!QFileInfo::exists(target) && !QFile::rename(file.absoluteFilePath(), target)) {
+            qWarning() << "Failed to migrate the settings of group" << group;
+        }
+    }
 }
 
 SettingsObject* InstanceList::groupSettings(const GroupId& group)
@@ -929,6 +953,7 @@ void InstanceList::saveGroupList()
 void InstanceList::loadGroupList()
 {
     qDebug() << "Will load group list now.";
+    migrateGroupSettingsFiles();
 
     QString groupFileName = QDir::current().filePath("instgroups.json");
 
