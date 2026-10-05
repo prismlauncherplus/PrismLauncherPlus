@@ -66,14 +66,9 @@ bool isShareable(const QString& key)
         // depend on the resource packs installed in the instance
         "resourcePacks",
         "incompatibleResourcePacks",
-        // per instance state rather than settings
+        // per instance state rather than settings.
+        // dismissed prompts and tutorials (onboardAccessibility, tutorialStep, ...) are shared on purpose, so they are only shown once
         "lastServer",
-        "tutorialStep",
-        "joinedFirstServer",
-        "onboardAccessibility",
-        "skipMultiplayerWarning",
-        "skipRealms32bitWarning",
-        "hideBundleTutorial",
         // Minecraft's crash detection for the game folder
         "startedCleanly",
     };

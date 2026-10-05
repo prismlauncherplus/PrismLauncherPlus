@@ -253,6 +253,59 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="gameOptionsGroupBox">
+             <property name="title">
+              <string>Shared &amp;Game Options</string>
+             </property>
+             <property name="checkable">
+              <bool>false</bool>
+             </property>
+             <layout class="QVBoxLayout" name="gameOptionsLayout">
+              <item>
+               <widget class="QLabel" name="gameOptionsDescription">
+                <property name="text">
+                 <string>Minecraft's own settings (video, controls, sound, ...) are kept in sync between all instances using the same profile.</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="gameOptionsProfileLayout">
+                <item>
+                 <widget class="QLabel" name="gameOptionsProfileLabel">
+                  <property name="text">
+                   <string>&amp;Profile:</string>
+                  </property>
+                  <property name="buddy">
+                   <cstring>gameOptionsProfileComboBox</cstring>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QComboBox" name="gameOptionsProfileComboBox">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QLabel" name="gameOptionsInfoLabel">
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <widget class="QGroupBox" name="globalDataPacksGroupBox">
              <property name="title">
               <string>&amp;Global Data Packs</string>

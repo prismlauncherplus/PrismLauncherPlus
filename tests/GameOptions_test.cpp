@@ -96,9 +96,13 @@ class GameOptionsTest : public QObject {
 
     void test_instanceSpecificOptionsAreNotShared()
     {
-        for (const auto& key :
-             { "version", "resourcePacks", "incompatibleResourcePacks", "lastServer", "tutorialStep", "startedCleanly" }) {
+        for (const auto& key : { "version", "resourcePacks", "incompatibleResourcePacks", "lastServer", "startedCleanly" }) {
             QVERIFY2(!isShareable(key), key);
+        }
+        // dismissed prompts are shared, so they are only shown once
+        for (const auto& key : { "tutorialStep", "joinedFirstServer", "onboardAccessibility", "skipMultiplayerWarning",
+                                 "skipRealms32bitWarning", "hideBundleTutorial", "skipFriendsListPromo" }) {
+            QVERIFY2(isShareable(key), key);
         }
         QVERIFY(isShareable("fov"));
         QVERIFY(isShareable("key_key.forward"));

@@ -42,10 +42,12 @@
 #include <QFileDialog>
 #include "Application.h"
 #include "BuildConfig.h"
+#include "InstanceList.h"
 #include "Json.h"
 #include "minecraft/PackProfile.h"
 #include "minecraft/WorldList.h"
 #include "minecraft/auth/AccountList.h"
+#include "minecraft/gameoptions/GameOptionsProfileList.h"
 #include "settings/Setting.h"
 
 MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, SettingsObject* groupSettings, QWidget* parent)
@@ -146,6 +148,27 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, Se
         connect(latestVersion.get(), &Setting::SettingChanged, this, [this](const Setting&, const QVariant&) {
             m_ui->latestMCVersionGroupBox->setChecked(m_instance->settings()->get("UseLatestMinecraftVersion").toBool());
         });
+    }
+
+    // Shared game options
+    {
+        m_ui->gameOptionsGroupBox->setCheckable(isOverrideMode());
+        connect(m_ui->gameOptionsProfileComboBox, &QComboBox::currentIndexChanged, this, &MinecraftSettingsWidget::updateGameOptionsInfo);
+        connect(m_ui->gameOptionsGroupBox, &QGroupBox::toggled, this, [this](bool overriding) {
+            if (!overriding) {
+                // show what is used instead
+                populateGameOptionsProfiles(inheritedGameOptionsProfile().first);
+            }
+            updateGameOptionsInfo();
+        });
+
+        // keep the dropdown up to date when profiles are added, renamed or removed
+        auto* profiles = APPLICATION->gameOptionsProfiles();
+        auto repopulate = [this] { populateGameOptionsProfiles(m_ui->gameOptionsProfileComboBox->currentData().toString()); };
+        connect(profiles, &QAbstractItemModel::modelReset, this, repopulate);
+        connect(profiles, &QAbstractItemModel::rowsRemoved, this, repopulate);
+        connect(profiles, &QAbstractItemModel::layoutChanged, this, repopulate);
+        connect(profiles, &QAbstractItemModel::dataChanged, this, repopulate);
     }
 
     m_ui->maximizedWarning->hide();
@@ -257,6 +280,12 @@ void MinecraftSettingsWidget::loadSettings()
 #else
     m_ui->lineEditSDLPath->setPlaceholderText(tr("Path to %1 library file").arg(BuildConfig.SDL_LIBRARY_NAME));
 #endif
+
+    // Shared game options, the dropdown shows the inherited profile when not overriding
+    m_ui->gameOptionsGroupBox->blockSignals(true);
+    m_ui->gameOptionsGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideGameOptionsProfile").toBool());
+    m_ui->gameOptionsGroupBox->blockSignals(false);
+    populateGameOptionsProfiles(settings->get("GameOptionsProfile").toString());
 
     // Performance
     m_ui->perfomanceGroupBox->setChecked(!isOverrideMode() || settings->get("OverridePerformance").toBool());
@@ -470,6 +499,20 @@ void MinecraftSettingsWidget::saveSettings()
         settings->reset("UseZink");
     }
 
+    // Shared game options
+    bool gameOptions = !isOverrideMode() || m_ui->gameOptionsGroupBox->isChecked();
+
+    if (isOverrideMode()) {
+        settings->set("OverrideGameOptionsProfile", gameOptions);
+    }
+
+    if (gameOptions) {
+        // an empty id means no profile, which is a valid override too
+        settings->set("GameOptionsProfile", m_ui->gameOptionsProfileComboBox->currentData().toString());
+    } else {
+        settings->reset("GameOptionsProfile");
+    }
+
     // Game time
     bool gameTime = !isOverrideMode() || m_ui->gameTimeGroupBox->isChecked();
 
@@ -563,6 +606,64 @@ void MinecraftSettingsWidget::openGlobalSettings()
     } else {  // TODO select tab
         APPLICATION->ShowGlobalSettings(this, "minecraft-settings");
     }
+}
+
+void MinecraftSettingsWidget::populateGameOptionsProfiles(const QString& selectedId)
+{
+    auto* combo = m_ui->gameOptionsProfileComboBox;
+    combo->blockSignals(true);
+    combo->clear();
+    combo->addItem(tr("None"), QString());
+    for (const auto& profile : APPLICATION->gameOptionsProfiles()->profiles()) {
+        auto label = profile.targetVersion.isEmpty() ? profile.name : tr("%1 (Minecraft %2)").arg(profile.name, profile.targetVersion);
+        combo->addItem(label, profile.id);
+    }
+    auto index = combo->findData(selectedId);
+    if (index < 0) {
+        // keep a deleted profile selected instead of silently switching to another one
+        combo->addItem(tr("Missing profile"), selectedId);
+        index = combo->count() - 1;
+    }
+    combo->setCurrentIndex(index);
+    combo->blockSignals(false);
+    updateGameOptionsInfo();
+}
+
+std::pair<QString, QString> MinecraftSettingsWidget::inheritedGameOptionsProfile() const
+{
+    if (m_instance != nullptr) {
+        auto* group = m_instance->groupSettings();
+        if (group != nullptr && group->get("OverrideGameOptionsProfile").toBool()) {
+            auto groupName = APPLICATION->instances()->getInstanceGroup(m_instance->id());
+            return { group->get("GameOptionsProfile").toString(), tr("the group %1").arg(groupName) };
+        }
+    }
+    return { APPLICATION->settings()->get("GameOptionsProfile").toString(), tr("the global settings") };
+}
+
+void MinecraftSettingsWidget::updateGameOptionsInfo()
+{
+    QStringList info;
+    const auto profileId = m_ui->gameOptionsProfileComboBox->currentData().toString();
+    const auto* profile = APPLICATION->gameOptionsProfiles()->profile(profileId);
+
+    if (isOverrideMode() && !m_ui->gameOptionsGroupBox->isChecked()) {
+        info << tr("Inherited from %1.").arg(inheritedGameOptionsProfile().second);
+    }
+    if (!profileId.isEmpty() && profile == nullptr) {
+        info << tr("The selected profile no longer exists, so no game options are shared.");
+    }
+    if (m_instance != nullptr && profile != nullptr && !profile->targetVersion.isEmpty()) {
+        auto instanceVersion = m_instance->getPackProfile()->getComponentVersion("net.minecraft");
+        if (!instanceVersion.isEmpty() && instanceVersion != profile->targetVersion) {
+            info << tr("This profile is meant for Minecraft %1, but this instance uses %2. "
+                       "Options that changed between these versions may not carry over.")
+                        .arg(profile->targetVersion, instanceVersion);
+        }
+    }
+
+    m_ui->gameOptionsInfoLabel->setText(info.join(' '));
+    m_ui->gameOptionsInfoLabel->setVisible(!info.isEmpty());
 }
 
 void MinecraftSettingsWidget::updateAccountsMenu(SettingsObject& settings) const

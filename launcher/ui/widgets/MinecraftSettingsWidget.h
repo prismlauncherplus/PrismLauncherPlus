@@ -61,6 +61,12 @@ class MinecraftSettingsWidget : public QWidget {
     bool isOverrideMode() const { return m_instance != nullptr || m_groupSettings != nullptr; }
     SettingsObject* settings() const;
     void openGlobalSettings();
+
+    /// fill the profile dropdown from the profile list, selecting the given profile id
+    void populateGameOptionsProfiles(const QString& selectedId);
+    /// the profile used when not overriding it, and where it comes from
+    std::pair<QString, QString> inheritedGameOptionsProfile() const;
+    void updateGameOptionsInfo();
     void updateAccountsMenu(SettingsObject& settings) const;
     bool isQuickPlaySupported();
    private slots:

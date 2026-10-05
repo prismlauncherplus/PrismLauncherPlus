@@ -109,6 +109,7 @@
 #include "MTPixmapCache.h"
 
 #include <minecraft/auth/AccountList.h>
+#include <minecraft/gameoptions/GameOptionsProfileList.h>
 #include "icons/IconList.h"
 #include "net/HttpMetaCache.h"
 
@@ -903,6 +904,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         m_settings->registerSetting("Env", "{}");
 
+        // id of the game options profile instances use, unless their group or themselves override it. empty for none
+        m_settings->registerSetting("GameOptionsProfile", "");
+
         m_settings->registerSetting("WorldTools", "{}");
 
         // Custom Microsoft Authentication Client ID
@@ -1029,6 +1033,13 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_accounts->loadList();
         m_accounts->fillQueue();
         qInfo() << "<> Accounts loaded.";
+    }
+
+    // and the game options profiles
+    {
+        m_gameOptionsProfiles = std::make_unique<GameOptionsProfileList>(QDir("gameoptions").absolutePath());
+        m_gameOptionsProfiles->load();
+        qInfo() << "<> Game options profiles loaded.";
     }
 
     // init the http meta cache

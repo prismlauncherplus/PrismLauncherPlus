@@ -62,6 +62,7 @@ class HttpMetaCache;
 class SettingsObject;
 class InstanceList;
 class AccountList;
+class GameOptionsProfileList;
 class IconList;
 class QNetworkAccessManager;
 class JavaInstallList;
@@ -138,6 +139,8 @@ class Application : public QApplication {
     IconList* icons() const { return m_icons.get(); }
 
     AccountList* accounts() const { return m_accounts.get(); }
+
+    GameOptionsProfileList* gameOptionsProfiles() const { return m_gameOptionsProfiles.get(); }
 
     Status status() const { return m_status; }
 
@@ -249,6 +252,7 @@ class Application : public QApplication {
 
     std::unique_ptr<ExternalUpdater> m_updater;
     std::unique_ptr<AccountList> m_accounts;
+    std::unique_ptr<GameOptionsProfileList> m_gameOptionsProfiles;
 
     std::unique_ptr<HttpMetaCache> m_metacache;
     std::unique_ptr<Meta::Index> m_metadataIndex;

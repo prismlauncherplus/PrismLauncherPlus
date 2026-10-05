@@ -100,13 +100,17 @@ void registerMinecraft(SettingsObject* settings, const ParentLookup& parent)
 
     auto envSetting = settings->registerSetting("OverrideEnv", false);
     settings->registerOverride(parent("Env"), envSetting);
+
+    // Shared game options (options.txt) profile, overriding with an empty id means no profile
+    auto gameOptionsSetting = settings->registerSetting("OverrideGameOptionsProfile", false);
+    settings->registerOverride(parent("GameOptionsProfile"), gameOptionsSetting);
 }
 
 QStringList gateIds()
 {
-    return { "OverrideGameTime",    "OverrideCommands",      "OverrideConsole",        "OverrideJavaLocation",
-             "OverrideJavaArgs",    "OverrideWindow",        "OverrideMemory",         "OverrideNativeWorkarounds",
-             "OverridePerformance", "OverrideMiscellaneous", "OverrideLegacySettings", "OverrideEnv" };
+    return { "OverrideGameTime",       "OverrideCommands", "OverrideConsole",           "OverrideJavaLocation", "OverrideJavaArgs",
+             "OverrideWindow",         "OverrideMemory",   "OverrideNativeWorkarounds", "OverridePerformance",  "OverrideMiscellaneous",
+             "OverrideLegacySettings", "OverrideEnv",      "OverrideGameOptionsProfile" };
 }
 
 }  // namespace InheritableSettings

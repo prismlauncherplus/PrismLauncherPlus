@@ -89,6 +89,21 @@ class InheritedSettingTest : public QObject {
         QCOMPARE(m_instance->get("JavaPath").toString(), QString("java"));
     }
 
+    void test_gameOptionsProfileSelection()
+    {
+        m_global->set("GameOptionsProfile", "global-profile");
+        QCOMPARE(m_instance->get("GameOptionsProfile").toString(), QString("global-profile"));
+
+        m_group->set("OverrideGameOptionsProfile", true);
+        m_group->set("GameOptionsProfile", "group-profile");
+        QCOMPARE(m_instance->get("GameOptionsProfile").toString(), QString("group-profile"));
+
+        // overriding with no profile opts the instance out of the group's profile
+        m_instance->set("OverrideGameOptionsProfile", true);
+        m_instance->set("GameOptionsProfile", "");
+        QCOMPARE(m_instance->get("GameOptionsProfile").toString(), QString());
+    }
+
     void test_passthroughWritesToTheOverridingLevel()
     {
         // nobody overrides the java location: java info is cached globally
