@@ -24,7 +24,9 @@
 OptionsFile OptionsFile::parse(const QByteArray& data)
 {
     OptionsFile file;
-    auto text = QString::fromUtf8(data);
+    // keep a byte order mark when writing the file again; it must not become part of the first key
+    file.m_hasByteOrderMark = data.startsWith("\xEF\xBB\xBF");
+    auto text = QString::fromUtf8(file.m_hasByteOrderMark ? data.mid(3) : data);
     if (text.endsWith('\n')) {
         text.chop(1);
     }
@@ -61,6 +63,9 @@ Result<OptionsFile> OptionsFile::load(const QString& path)
 QByteArray OptionsFile::serialize() const
 {
     QString text;
+    if (m_hasByteOrderMark) {
+        text += QChar(0xFEFF);
+    }
     for (const auto& line : m_lines) {
         if (line.isEntry) {
             text += line.key + ':' + line.value;

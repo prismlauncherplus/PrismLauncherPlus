@@ -25,16 +25,10 @@ namespace GameOptionsCompat {
 
 namespace {
 const QString keybindPrefix = QStringLiteral("key_");
-const QString sharedBand;
-const QString keyCodesBand = QStringLiteral("keybind-codes");
-const QString keyNamesBand = QStringLiteral("keybind-names");
-
-bool isKeyCode(const QString& value)
-{
-    bool ok = false;
-    value.trimmed().toInt(&ok);
-    return ok;
-}
+const QString numberBand = QStringLiteral("number");
+const QString quotedBand = QStringLiteral("quoted");
+const QString structuredBand = QStringLiteral("structured");
+const QString wordBand = QStringLiteral("word");
 }  // namespace
 
 ClientFormat ClientFormat::detect(const OptionsFile& existing, std::optional<int> fallbackDataVersion)
@@ -48,7 +42,7 @@ ClientFormat ClientFormat::detect(const OptionsFile& existing, std::optional<int
     // the keybinds the client wrote itself tell their format for sure
     for (const auto& key : existing.keys()) {
         if (isKeybind(key)) {
-            format.keybinds = isKeyCode(*existing.value(key)) ? KeybindFormat::Codes : KeybindFormat::Names;
+            format.keybinds = bandOf(key, *existing.value(key)) == numberBand ? KeybindFormat::Codes : KeybindFormat::Names;
             return format;
         }
     }
@@ -82,22 +76,32 @@ bool isKeybind(const QString& key)
 
 QString bandOf(const QString& key, const QString& value)
 {
+    auto trimmed = value.trimmed();
     if (isKeybind(key)) {
-        return isKeyCode(value) ? keyCodesBand : keyNamesBand;
+        // Forge adds modifiers to keybinds ("17:SHIFT")
+        trimmed = trimmed.section(':', 0, 0);
     }
-    return sharedBand;
+    bool isNumber = false;
+    trimmed.toDouble(&isNumber);
+    if (isNumber) {
+        return numberBand;
+    }
+    if (trimmed.size() >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        return quotedBand;
+    }
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        return structuredBand;
+    }
+    return wordBand;
 }
 
-std::optional<QString> bandFor(const QString& key, const ClientFormat& client)
+std::optional<QString> keybindBand(const ClientFormat& client)
 {
-    if (!isKeybind(key)) {
-        return sharedBand;
-    }
     switch (client.keybinds) {
         case KeybindFormat::Codes:
-            return keyCodesBand;
+            return numberBand;
         case KeybindFormat::Names:
-            return keyNamesBand;
+            return wordBand;
         case KeybindFormat::Unknown:
             break;
     }

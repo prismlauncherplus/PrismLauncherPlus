@@ -33,7 +33,8 @@ namespace GameOptionsMerger {
 
 struct ApplyResult {
     OptionsFile file;
-    /// the shareable options of the merged file, to find out what changed in game
+    /// the options taken from the profile and their values, to find out what changed in game.
+    /// Options the profile didn't provide are left out, so the client's own values for them are added to the profile.
     QMap<QString, QString> snapshot;
     /// options taken from the profile
     QStringList applied;
@@ -46,7 +47,8 @@ ApplyResult apply(const GameOptionsProfile& profile, const OptionsFile& current,
 /// the shareable options of the file
 QMap<QString, QString> snapshotOf(const OptionsFile& file);
 
-/// the shareable options that were added or changed since the snapshot was taken; removed options are ignored
+/// The shareable options that are new (not in the snapshot) or were changed since the snapshot was taken.
+/// Numbers that only differ in precision (written by another Minecraft version) count as unchanged, removed options are ignored.
 QList<GameOptionChange> collectChanges(const QMap<QString, QString>& snapshot, const OptionsFile& after);
 
 }  // namespace GameOptionsMerger

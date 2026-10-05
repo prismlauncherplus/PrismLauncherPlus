@@ -17,7 +17,65 @@
  */
 #include "GameOptionsMerger.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace GameOptionsMerger {
+
+namespace {
+// the band of the profile's values the client gets
+std::optional<QString> chooseBand(const QString& key,
+                                  const QMap<QString, GameOptionValue>& variants,
+                                  const GameOptionsCompat::ClientFormat& client,
+                                  const std::optional<QString>& existing)
+{
+    // the client wrote the option itself, so it uses that shape
+    if (existing) {
+        return GameOptionsCompat::bandOf(key, *existing);
+    }
+    if (GameOptionsCompat::isKeybind(key)) {
+        return GameOptionsCompat::keybindBand(client);
+    }
+    if (variants.size() == 1) {
+        return variants.firstKey();
+    }
+    // the value written by the closest Minecraft version, or the most recent one if the version isn't known
+    std::optional<QString> best;
+    for (auto iter = variants.begin(); iter != variants.end(); ++iter) {
+        if (!best) {
+            best = iter.key();
+            continue;
+        }
+        const auto& current = variants[*best];
+        if (client.dataVersion && iter->dataVersion && current.dataVersion) {
+            if (std::abs(*iter->dataVersion - *client.dataVersion) < std::abs(*current.dataVersion - *client.dataVersion)) {
+                best = iter.key();
+            }
+        } else if (client.dataVersion && iter->dataVersion && !current.dataVersion) {
+            best = iter.key();
+        } else if (!client.dataVersion && iter->updated > current.updated) {
+            best = iter.key();
+        }
+    }
+    return best;
+}
+
+bool isSameValue(const QString& a, const QString& b)
+{
+    if (a == b) {
+        return true;
+    }
+    bool aIsNumber = false;
+    bool bIsNumber = false;
+    const double aNumber = a.trimmed().toDouble(&aIsNumber);
+    const double bNumber = b.trimmed().toDouble(&bIsNumber);
+    if (!aIsNumber || !bIsNumber) {
+        return false;
+    }
+    // e.g. "0.7262599031690141" and "0.72626", the same setting written by versions storing it with different precision
+    return std::abs(aNumber - bNumber) <= 1e-5 * std::max({ 1.0, std::abs(aNumber), std::abs(bNumber) });
+}
+}  // namespace
 
 ApplyResult apply(const GameOptionsProfile& profile, const OptionsFile& current, const GameOptionsCompat::ClientFormat& client)
 {
@@ -34,17 +92,17 @@ ApplyResult apply(const GameOptionsProfile& profile, const OptionsFile& current,
         if (!GameOptionsCompat::isShareable(key)) {
             continue;
         }
-        auto band = GameOptionsCompat::bandFor(key, client);
-        auto value = band ? profile.value(key, *band) : std::nullopt;
-        if (!value) {
+        auto band = chooseBand(key, *option, client, current.value(key));
+        auto value = band ? option->find(*band) : option->end();
+        if (value == option->end()) {
             result.skipped.append(key);
             continue;
         }
         result.file.set(key, value->value);
         result.applied.append(key);
+        result.snapshot.insert(key, value->value);
     }
 
-    result.snapshot = snapshotOf(result.file);
     return result;
 }
 
@@ -68,7 +126,7 @@ QList<GameOptionChange> collectChanges(const QMap<QString, QString>& snapshot, c
         auto before = snapshot.find(iter.key());
         if (before == snapshot.end()) {
             changes.append({ iter.key(), std::nullopt, iter.value() });
-        } else if (*before != iter.value()) {
+        } else if (!isSameValue(*before, iter.value())) {
             changes.append({ iter.key(), *before, iter.value() });
         }
     }

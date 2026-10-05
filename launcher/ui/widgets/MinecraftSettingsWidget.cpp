@@ -155,7 +155,12 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, Se
         m_ui->gameOptionsGroupBox->setCheckable(isOverrideMode());
         connect(m_ui->gameOptionsProfileComboBox, &QComboBox::currentIndexChanged, this, &MinecraftSettingsWidget::updateGameOptionsInfo);
         connect(m_ui->gameOptionsGroupBox, &QGroupBox::toggled, this, [this](bool overriding) {
-            if (!overriding) {
+            if (overriding) {
+                if (m_gameOptionsOverride) {
+                    populateGameOptionsProfiles(*m_gameOptionsOverride);
+                }
+            } else {
+                m_gameOptionsOverride = m_ui->gameOptionsProfileComboBox->currentData().toString();
                 // show what is used instead
                 populateGameOptionsProfiles(inheritedGameOptionsProfile().first);
             }

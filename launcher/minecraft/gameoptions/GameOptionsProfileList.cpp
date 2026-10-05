@@ -136,14 +136,18 @@ Result<> GameOptionsProfileList::modifyProfile(const QString& id, const Modifica
     }
 
     // start from what is on disk, another instance may have written changes since it was loaded
-    GameOptionsProfile profile = m_profiles[index];
-    if (QFile::exists(path)) {
-        auto current = readProfile(path);
-        if (!current) {
-            return std::unexpected(current.error());
-        }
-        profile = *current;
+    if (!QFile::exists(path)) {
+        // deleted outside of the launcher; don't bring it back
+        beginRemoveRows(QModelIndex(), static_cast<int>(index), static_cast<int>(index));
+        m_profiles.removeAt(index);
+        endRemoveRows();
+        return std::unexpected(QString("the game options profile %1 was deleted").arg(id));
     }
+    auto current = readProfile(path);
+    if (!current) {
+        return std::unexpected(current.error());
+    }
+    GameOptionsProfile profile = *current;
 
     modification(profile);
     profile.id = id;
@@ -153,10 +157,9 @@ Result<> GameOptionsProfileList::modifyProfile(const QString& id, const Modifica
     }
     m_profiles[index] = profile;
     // a rename can change the order
-    emit layoutAboutToBeChanged();
-    sortProfiles();
-    emit layoutChanged();
-    emit dataChanged(this->index(0), this->index(static_cast<int>(m_profiles.size() - 1)));
+    resortKeepingIndexes();
+    auto row = static_cast<int>(indexOf(id));
+    emit dataChanged(this->index(row), this->index(row));
     return {};
 }
 
@@ -224,6 +227,24 @@ qsizetype GameOptionsProfileList::indexOf(const QString& id) const
         }
     }
     return -1;
+}
+
+void GameOptionsProfileList::resortKeepingIndexes()
+{
+    emit layoutAboutToBeChanged();
+    // persistent indexes (selections in views) follow their profile to its new row
+    const auto persistent = persistentIndexList();
+    QStringList ids;
+    for (const auto& index : persistent) {
+        ids.append(m_profiles[index.row()].id);
+    }
+    sortProfiles();
+    QModelIndexList moved;
+    for (const auto& id : ids) {
+        moved.append(index(static_cast<int>(indexOf(id))));
+    }
+    changePersistentIndexList(persistent, moved);
+    emit layoutChanged();
 }
 
 void GameOptionsProfileList::sortProfiles()

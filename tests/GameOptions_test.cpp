@@ -92,6 +92,14 @@ class GameOptionsTest : public QObject {
         QCOMPARE(OptionsFile::load(path)->serialize(), modernOptions);
     }
 
+    void test_byteOrderMark()
+    {
+        const QByteArray data = "\xEF\xBB\xBFversion:3955\nfov:0.5\n";
+        auto file = OptionsFile::parse(data);
+        QCOMPARE(file.dataVersion(), 3955);
+        QCOMPARE(file.serialize(), data);
+    }
+
     // GameOptionsCompat
 
     void test_instanceSpecificOptionsAreNotShared()
@@ -125,6 +133,26 @@ class GameOptionsTest : public QObject {
         QCOMPARE(ClientFormat::detect(OptionsFile()).keybinds, KeybindFormat::Unknown);
     }
 
+    void test_valueShapes()
+    {
+        QCOMPARE(bandOf("fov", "0.5"), QString("number"));
+        QCOMPARE(bandOf("ao", "2"), QString("number"));
+        QCOMPARE(bandOf("ao", "true"), QString("word"));
+        QCOMPARE(bandOf("mainHand", "right"), QString("word"));
+        QCOMPARE(bandOf("mainHand", "\"right\""), QString("quoted"));
+        QCOMPARE(bandOf("resourcePacks", "[\"vanilla\"]"), QString("structured"));
+        QCOMPARE(bandOf("key_key.forward", "17"), QString("number"));
+        QCOMPARE(bandOf("key_key.forward", "key.keyboard.w"), QString("word"));
+    }
+
+    void test_forgeKeybindModifiers()
+    {
+        // Forge writes modifiers after the key code
+        QCOMPARE(bandOf("key_key.forward", "17:SHIFT"), QString("number"));
+        auto file = OptionsFile::parse("version:1343\nkey_key.forward:17:SHIFT\n");
+        QCOMPARE(ClientFormat::detect(file).keybinds, KeybindFormat::Codes);
+    }
+
     // GameOptionsProfile
 
     void test_importSkipsInstanceSpecificOptions()
@@ -135,7 +163,7 @@ class GameOptionsTest : public QObject {
         QVERIFY(profile.options.contains("fov"));
         QVERIFY(!profile.options.contains("version"));
         QVERIFY(!profile.options.contains("resourcePacks"));
-        QCOMPARE(profile.value("fov", "")->dataVersion, 3955);
+        QCOMPARE(profile.value("fov", "number")->dataVersion, 3955);
     }
 
     void test_keybindsAreKeptPerFormat()
@@ -149,7 +177,7 @@ class GameOptionsTest : public QObject {
 
         // shared options: the later import wins
         QCOMPARE(profile.options["fov"].size(), 1);
-        QCOMPARE(profile.value("fov", "")->value, QString("0.5"));
+        QCOMPARE(profile.value("fov", "number")->value, QString("0.5"));
         // keybinds: both formats are kept
         QCOMPARE(profile.options["key_key.forward"].size(), 2);
     }
@@ -174,8 +202,8 @@ class GameOptionsTest : public QObject {
         QCOMPARE(loaded->targetVersion, profile.targetVersion);
         QCOMPARE(loaded->options.keys(), profile.options.keys());
         QCOMPARE(loaded->options["key_key.forward"].size(), 2);
-        QCOMPARE(loaded->value("fov", "")->updated, now);
-        QCOMPARE(loaded->value("noDataVersion", "")->dataVersion, std::nullopt);
+        QCOMPARE(loaded->value("fov", "number")->updated, now);
+        QCOMPARE(loaded->value("noDataVersion", "number")->dataVersion, std::nullopt);
     }
 
     void test_jsonRejectsUnknownFormat()
@@ -236,6 +264,63 @@ class GameOptionsTest : public QObject {
         QVERIFY(!unknown.file.contains("version"));
         QVERIFY(!unknown.file.contains("key_key.forward"));
         QCOMPARE(unknown.file.value("fov"), QString("0.5"));
+    }
+
+    void test_shapesDontLeakBetweenVersions()
+    {
+        // 1.21 quotes strings, 1.16 doesn't; neither reads the other's values
+        GameOptionsProfile profile;
+        const auto now = QDateTime::currentDateTimeUtc();
+        profile.setValue("mainHand", "\"left\"", 3955, now);
+
+        auto old = OptionsFile::parse("version:2586\nmainHand:right\n");
+        auto format = ClientFormat::detect(old);
+        auto applied = GameOptionsMerger::apply(profile, old, format);
+        QCOMPARE(applied.file.value("mainHand"), QString("right"));
+        QVERIFY(applied.skipped.contains("mainHand"));
+
+        // the old client's own value goes into its own band, the quoted one stays
+        profile.applyChanges(GameOptionsMerger::collectChanges(applied.snapshot, applied.file), format, now);
+        QCOMPARE(profile.value("mainHand", "word")->value, QString("right"));
+        QCOMPARE(profile.value("mainHand", "quoted")->value, QString("\"left\""));
+    }
+
+    void test_newOptionsUseTheClosestVersion()
+    {
+        GameOptionsProfile profile;
+        const auto now = QDateTime::currentDateTimeUtc();
+        profile.setValue("ao", "2", 1343, now);
+        profile.setValue("ao", "true", 3955, now);
+
+        auto modern = GameOptionsMerger::apply(profile, OptionsFile(), ClientFormat::detect(OptionsFile(), 4000));
+        QCOMPARE(modern.file.value("ao"), QString("true"));
+        auto legacy = GameOptionsMerger::apply(profile, OptionsFile(), ClientFormat::detect(OptionsFile(), 1500));
+        QCOMPARE(legacy.file.value("ao"), QString("2"));
+    }
+
+    void test_firstLaunchSeedsTheProfile()
+    {
+        // an empty profile and an instance with its own options: all of its shareable options go into the profile
+        auto modern = OptionsFile::parse(modernOptions);
+        auto applied = GameOptionsMerger::apply(GameOptionsProfile(), modern, ClientFormat::detect(modern));
+        QVERIFY(applied.applied.isEmpty());
+        auto changes = GameOptionsMerger::collectChanges(applied.snapshot, applied.file);
+        QStringList keys;
+        for (const auto& change : changes) {
+            keys.append(change.key);
+        }
+        QVERIFY(keys.contains("fov"));
+        QVERIFY(keys.contains("key_key.forward"));
+        QVERIFY(!keys.contains("version"));
+        QVERIFY(!keys.contains("resourcePacks"));
+    }
+
+    void test_numberPrecisionIsNotAChange()
+    {
+        auto after = OptionsFile::parse("mouseSensitivity:0.72626\ngamma:1.0\n");
+        auto changes = GameOptionsMerger::collectChanges({ { "mouseSensitivity", "0.7262599031690141" }, { "gamma", "0.5" } }, after);
+        QCOMPARE(changes.size(), 1);
+        QCOMPARE(changes[0].key, QString("gamma"));
     }
 
     void test_collectChanges()
@@ -343,8 +428,33 @@ class GameOptionsTest : public QObject {
 
         GameOptionsProfileList reloaded(dir.path());
         reloaded.load();
-        QCOMPARE(reloaded.profile(id)->value("fov", "")->value, QString("0.9"));
-        QCOMPARE(reloaded.profile(id)->value("gamma", "")->value, QString("1.0"));
+        QCOMPARE(reloaded.profile(id)->value("fov", "number")->value, QString("0.9"));
+        QCOMPARE(reloaded.profile(id)->value("gamma", "number")->value, QString("1.0"));
+    }
+
+    void test_profileDeletedOnDiskIsNotRestored()
+    {
+        QTemporaryDir dir;
+        GameOptionsProfileList list(dir.path());
+        auto id = *list.createProfile("Gone");
+        QVERIFY(QFile::remove(dir.filePath(id + ".json")));
+        QVERIFY(!list.applyChanges(id, { { "fov", std::nullopt, "0.9" } }, ClientFormat()).has_value());
+        QVERIFY(!QFile::exists(dir.filePath(id + ".json")));
+        QCOMPARE(list.profile(id), nullptr);
+    }
+
+    void test_renameKeepsPersistentIndexes()
+    {
+        QTemporaryDir dir;
+        GameOptionsProfileList list(dir.path());
+        auto a = *list.createProfile("A");
+        auto b = *list.createProfile("B");
+        QPersistentModelIndex selected(list.index(0));
+        QCOMPARE(selected.data(GameOptionsProfileList::IdRole).toString(), a);
+        // renaming moves A behind B
+        QVERIFY(list.setProfileInfo(a, "C", QString()).has_value());
+        QCOMPARE(selected.data(GameOptionsProfileList::IdRole).toString(), a);
+        QCOMPARE(list.data(list.index(0), GameOptionsProfileList::IdRole).toString(), b);
     }
 
     void test_ignoresBrokenFiles()

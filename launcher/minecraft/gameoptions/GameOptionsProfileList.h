@@ -67,6 +67,7 @@ class GameOptionsProfileList : public QAbstractListModel {
     Result<QString> addProfile(GameOptionsProfile profile);
     qsizetype indexOf(const QString& id) const;
     void sortProfiles();
+    void resortKeepingIndexes();
 
     QString m_directory;
     QList<GameOptionsProfile> m_profiles;

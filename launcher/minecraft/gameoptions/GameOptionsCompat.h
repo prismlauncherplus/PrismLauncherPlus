@@ -25,9 +25,10 @@ class OptionsFile;
 /*!
  * Rules for sharing options.txt entries between Minecraft versions.
  *
- * Some options changed the format of their values between versions. Their values are kept in separate "format bands",
- * and a client only gets values from its own band, so e.g. a 1.12 and a 1.20 instance don't overwrite each other's keybinds.
- * Options without known format changes all share a single band.
+ * Minecraft versions write some options in different shapes that other versions can't read: keybinds as key codes ("17")
+ * or key names ("key.keyboard.w"), "ao" as a number or a boolean, strings bare (mainHand:right) or quoted
+ * (mainHand:"right"). Values are kept in a separate "band" per shape, and a client only gets values of the shape it uses,
+ * so e.g. a 1.12 and a 1.21 instance don't keep overwriting each other's values with ones the other can't read.
  */
 namespace GameOptionsCompat {
 
@@ -53,10 +54,10 @@ bool isShareable(const QString& key);
 /// whether the option's values depend on the Minecraft version
 bool isKeybind(const QString& key);
 
-/// the format band of a value, as written by some client
+/// the band (shape) of a value: "number", "quoted", "structured" or "word"
 QString bandOf(const QString& key, const QString& value);
 
-/// the format band the client reads, or nothing if it can't be determined (values of the option must not be applied then)
-std::optional<QString> bandFor(const QString& key, const ClientFormat& client);
+/// the band of the keybinds the client reads, or nothing if it can't be determined
+std::optional<QString> keybindBand(const ClientFormat& client);
 
 }  // namespace GameOptionsCompat

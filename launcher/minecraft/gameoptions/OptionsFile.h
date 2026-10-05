@@ -66,6 +66,7 @@ class OptionsFile {
     void rebuildIndex();
 
     QList<Line> m_lines;
+    bool m_hasByteOrderMark = false;
     // key -> index of the line holding its effective value; Minecraft uses the last one if a key is repeated
     QMap<QString, qsizetype> m_index;
 };

@@ -37,6 +37,7 @@
 #pragma once
 
 #include <QWidget>
+#include <optional>
 #include "JavaSettingsWidget.h"
 #include "minecraft/MinecraftInstance.h"
 
@@ -66,6 +67,8 @@ class MinecraftSettingsWidget : public QWidget {
     void populateGameOptionsProfiles(const QString& selectedId);
     /// the profile used when not overriding it, and where it comes from
     std::pair<QString, QString> inheritedGameOptionsProfile() const;
+    /// the profile picked as override, to restore it when the override is turned off and on again
+    std::optional<QString> m_gameOptionsOverride;
     void updateGameOptionsInfo();
     void updateAccountsMenu(SettingsObject& settings) const;
     bool isQuickPlaySupported();
