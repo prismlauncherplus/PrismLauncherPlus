@@ -46,6 +46,7 @@
 #include <QProcess>
 #include <QSet>
 #include <cstdint>
+#include <functional>
 #include "QObjectPtr.h"
 
 #include "settings/SettingsObject.h"
@@ -191,6 +192,17 @@ class BaseInstance : public QObject {
      */
     virtual SettingsObject* settings();
 
+    using GroupSettingsLookup = std::function<SettingsObject*()>;
+    /// Set how to find the default settings of the group the instance is in.
+    /// Everything the instance doesn't override itself is inherited from them, or from the global settings if there are none.
+    void setGroupSettingsLookup(GroupSettingsLookup lookup) { m_groupSettingsLookup = std::move(lookup); }
+
+    /// the default settings of the instance's group, or nullptr if the instance is not in a group
+    SettingsObject* groupSettings() const;
+
+    /// whether the instance or its group overrides the global settings behind the given gate setting (e.g. "OverrideJavaLocation")
+    bool isOverriding(const QString& gate);
+
     /*!
      * \brief Loads settings specific to an instance type if they're not already loaded.
      */
@@ -273,6 +285,9 @@ class BaseInstance : public QObject {
 
     SettingsObject* globalSettings() const { return m_globalSettings; }
 
+    /// the parent of an overridable instance setting: the group setting if the instance's group has it, the global setting otherwise
+    std::shared_ptr<Setting> inheritedSetting(const QString& id);
+
     bool isSpecificSettingsLoaded() const { return m_specificSettingsLoaded; }
     void setSpecificSettingsLoaded(bool loaded) { m_specificSettingsLoaded = loaded; }
 
@@ -309,6 +324,7 @@ class BaseInstance : public QObject {
     bool m_hasBrokenVersion = false;
 
     SettingsObject* m_globalSettings;
+    GroupSettingsLookup m_groupSettingsLookup;
     bool m_specificSettingsLoaded = false;
 };
 

@@ -46,6 +46,7 @@
 #include <QSet>
 #include <QStack>
 #include <QTimer>
+#include <QUrl>
 #include <QUuid>
 #include <algorithm>
 #include "Json.h"
@@ -59,6 +60,7 @@
 #include "WatchLock.h"
 #include "minecraft/MinecraftInstance.h"
 #include "settings/INISettingsObject.h"
+#include "settings/InheritableSettings.h"
 
 #ifdef Q_OS_WIN32
 #include <windows.h>
@@ -240,6 +242,25 @@ GroupId InstanceList::getInstanceGroup(const InstanceId& id) const
 
 void InstanceList::setInstanceGroup(const InstanceId& id, GroupId name)
 {
+    if (assignInstanceGroup(id, std::move(name))) {
+        saveGroupList();
+    }
+}
+
+void InstanceList::setInstanceGroups(const QStringList& ids, const GroupId& name)
+{
+    bool changed = false;
+    for (const auto& id : ids) {
+        changed |= assignInstanceGroup(id, name);
+    }
+    // write the group list once instead of once per instance
+    if (changed) {
+        saveGroupList();
+    }
+}
+
+bool InstanceList::assignInstanceGroup(const InstanceId& id, GroupId name)
+{
     if (name.isEmpty() && !name.isNull()) {
         name = QString();
     }
@@ -247,7 +268,7 @@ void InstanceList::setInstanceGroup(const InstanceId& id, GroupId name)
     auto* inst = getInstanceById(id);
     if (!inst) {
         qDebug() << "Attempt to set a null instance's group";
-        return;
+        return false;
     }
 
     bool changed = false;
@@ -267,8 +288,8 @@ void InstanceList::setInstanceGroup(const InstanceId& id, GroupId name)
         increaseGroupCount(name);
         auto idx = getInstIndex(inst);
         emit dataChanged(index(idx), index(idx), { GroupRole });
-        saveGroupList();
     }
+    return changed;
 }
 
 QStringList InstanceList::getGroups()
@@ -276,8 +297,48 @@ QStringList InstanceList::getGroups()
     return m_groupNameCache.keys();
 }
 
+QString InstanceList::groupSettingsPath(const GroupId& group)
+{
+    // percent encoding keeps the file name valid and unique for any group name
+    return QDir::current().filePath(FS::PathCombine("groupsettings", QString::fromLatin1(QUrl::toPercentEncoding(group)) + ".cfg"));
+}
+
+SettingsObject* InstanceList::groupSettings(const GroupId& group)
+{
+    if (group.isEmpty()) {
+        return nullptr;
+    }
+    auto iter = m_groupSettings.find(group);
+    if (iter != m_groupSettings.end()) {
+        return iter->second.get();
+    }
+
+    auto path = groupSettingsPath(group);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    auto settings = std::make_unique<INISettingsObject>(path);
+    InheritableSettings::ParentLookup parent = [this](const QString& id) { return m_globalSettings->getSetting(id); };
+    InheritableSettings::registerCommon(settings.get(), parent);
+    InheritableSettings::registerMinecraft(settings.get(), parent);
+    return m_groupSettings.emplace(group, std::move(settings)).first->second.get();
+}
+
+bool InstanceList::groupHasSettings(const GroupId& group)
+{
+    // avoid creating settings objects just to answer this
+    if (group.isEmpty() || (!m_groupSettings.contains(group) && !QFileInfo::exists(groupSettingsPath(group)))) {
+        return false;
+    }
+    auto* settings = groupSettings(group);
+    return std::ranges::any_of(InheritableSettings::gateIds(), [settings](const QString& gate) { return settings->get(gate).toBool(); });
+}
+
 void InstanceList::deleteGroup(const GroupId& name)
 {
+    m_groupSettings.erase(name);
+    if (QFileInfo::exists(groupSettingsPath(name)) && !QFile::remove(groupSettingsPath(name))) {
+        qWarning() << "Failed to remove the settings of group" << name;
+    }
+
     m_groupNameCache.remove(name);
     m_collapsedGroups.remove(name);
 
@@ -303,6 +364,21 @@ void InstanceList::deleteGroup(const GroupId& name)
 
 void InstanceList::renameGroup(const QString& src, const QString& dst)
 {
+    // the group settings move along with the group
+    m_groupSettings.erase(src);
+    m_groupSettings.erase(dst);
+    const auto srcSettings = groupSettingsPath(src);
+    const auto dstSettings = groupSettingsPath(dst);
+    // drop settings left behind by an earlier group with the destination name, so the renamed group doesn't pick them up.
+    // on case insensitive file systems a rename that only changes the case is a rename to the same file
+    if (QFileInfo::exists(dstSettings) &&
+        (!QFileInfo::exists(srcSettings) || QFileInfo(dstSettings).canonicalFilePath() != QFileInfo(srcSettings).canonicalFilePath())) {
+        QFile::remove(dstSettings);
+    }
+    if (QFileInfo::exists(srcSettings) && !QFile::rename(srcSettings, dstSettings)) {
+        qWarning() << "Failed to move the settings of group" << src << "to" << dst;
+    }
+
     m_groupNameCache.remove(src);
     if (m_collapsedGroups.remove(src)) {
         m_collapsedGroups.insert(dst);
@@ -744,6 +820,8 @@ std::unique_ptr<MinecraftInstance> InstanceList::loadInstance(const InstanceId& 
     }
 
     auto inst = std::make_unique<MinecraftInstance>(m_globalSettings, std::move(instanceSettings), instanceRoot);
+    // looked up every time, so the instance follows group changes
+    inst->setGroupSettingsLookup([this, id] { return groupSettings(m_instanceGroupIndex.value(id)); });
     qDebug() << "Loaded instance" << inst->name() << "from" << inst->instanceRoot();
 
     auto shortcut = inst->shortcuts();

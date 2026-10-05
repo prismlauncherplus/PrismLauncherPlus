@@ -58,6 +58,8 @@ class InstanceView : public QAbstractItemView {
 
     using visibilityFunction = std::function<bool(const QString&)>;
     void setSourceOfGroupCollapseStatus(visibilityFunction f) { m_fVisibility = f; }
+    /// tells whether a group changes any settings, which is shown on the settings button of its header
+    void setSourceOfGroupSettingsStatus(visibilityFunction f) { m_fGroupHasSettings = f; }
 
     /// return geometry rectangle occupied by the specified model item
     QRect geometryRect(const QModelIndex& index) const;
@@ -99,9 +101,12 @@ class InstanceView : public QAbstractItemView {
    signals:
     void droppedURLs(QList<QUrl> urls);
     void groupStateChanged(QString group, bool collapsed);
+    /// the settings button in the header of a group was clicked
+    void groupSettingsRequested(QString group);
 
    protected:
     bool isIndexHidden(const QModelIndex& index) const override;
+    bool viewportEvent(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -124,6 +129,7 @@ class InstanceView : public QAbstractItemView {
     QList<VisualGroup*> m_groups;
 
     visibilityFunction m_fVisibility;
+    visibilityFunction m_fGroupHasSettings;
 
     // geometry
     int m_leftMargin = 5;
@@ -142,6 +148,7 @@ class InstanceView : public QAbstractItemView {
     QPersistentModelIndex m_pressedIndex;
     bool m_pressedAlreadySelected;
     VisualGroup* m_pressedCategory;
+    QString m_pressedSettingsGroup;  // group whose settings button is being pressed
     QItemSelectionModel::SelectionFlag m_ctrlDragSelectionFlag;
     QPoint m_lastDragPosition;
 

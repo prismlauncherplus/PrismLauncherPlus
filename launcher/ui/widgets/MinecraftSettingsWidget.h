@@ -46,13 +46,20 @@ class MinecraftSettingsWidget;
 
 class MinecraftSettingsWidget : public QWidget {
    public:
-    explicit MinecraftSettingsWidget(MinecraftInstance* instance, QWidget* parent = nullptr);
+    explicit MinecraftSettingsWidget(MinecraftInstance* instance, QWidget* parent = nullptr)
+        : MinecraftSettingsWidget(instance, nullptr, parent)
+    {}
+    /// edits the settings of the instance, or the default settings of an instance group, or the global settings if both are null
+    MinecraftSettingsWidget(MinecraftInstance* instance, SettingsObject* groupSettings, QWidget* parent);
     ~MinecraftSettingsWidget() override;
 
     void loadSettings();
     void saveSettings();
 
    private:
+    /// instances and groups only override parts of the global settings
+    bool isOverrideMode() const { return m_instance != nullptr || m_groupSettings != nullptr; }
+    SettingsObject* settings() const;
     void openGlobalSettings();
     void updateAccountsMenu(SettingsObject& settings) const;
     bool isQuickPlaySupported();
@@ -63,6 +70,7 @@ class MinecraftSettingsWidget : public QWidget {
 
    protected:
     MinecraftInstance* m_instance;
+    SettingsObject* m_groupSettings;
 
    public:
     Ui::MinecraftSettingsWidget* m_ui;

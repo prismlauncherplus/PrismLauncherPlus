@@ -63,7 +63,7 @@ void AutoInstallJava::executeTask()
 {
     auto settings = m_instance->settings();
     if (!APPLICATION->settings()->get("AutomaticJavaSwitch").toBool() ||
-        (settings->get("OverrideJavaLocation").toBool() && QFileInfo::exists(settings->get("JavaPath").toString()))) {
+        (m_instance->isOverriding("OverrideJavaLocation") && QFileInfo::exists(settings->get("JavaPath").toString()))) {
         emitSucceeded();
         return;
     }

@@ -48,12 +48,12 @@
 #include "minecraft/auth/AccountList.h"
 #include "settings/Setting.h"
 
-MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QWidget* parent)
-    : QWidget(parent), m_instance(instance), m_ui(new Ui::MinecraftSettingsWidget)
+MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, SettingsObject* groupSettings, QWidget* parent)
+    : QWidget(parent), m_instance(instance), m_groupSettings(groupSettings), m_ui(new Ui::MinecraftSettingsWidget)
 {
     m_ui->setupUi(this);
 
-    if (m_instance == nullptr) {
+    if (!isOverrideMode()) {
         m_ui->settingsTabs->removeTab(1);
 
         m_ui->openGlobalSettingsButton->setVisible(false);
@@ -64,11 +64,16 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
         m_ui->countGameTime->hide();
         m_ui->latestMCVersionGroupBox->hide();
     } else {
-        m_javaSettings = new JavaSettingsWidget(m_instance, this);
+        m_javaSettings = new JavaSettingsWidget(m_instance, m_groupSettings, this);
         m_ui->javaScrollArea->setWidget(m_javaSettings);
 
-        m_ui->showGameTime->setText(tr("Show time &playing this instance"));
-        m_ui->recordGameTime->setText(tr("&Record time playing this instance"));
+        if (m_instance != nullptr) {
+            m_ui->showGameTime->setText(tr("Show time &playing this instance"));
+            m_ui->recordGameTime->setText(tr("&Record time playing this instance"));
+        } else {
+            m_ui->showGameTime->setText(tr("Show time &playing instances of this group"));
+            m_ui->recordGameTime->setText(tr("&Record time playing instances of this group"));
+        }
         m_ui->showGlobalGameTime->hide();
         m_ui->showGameTimeWithoutDays->hide();
 
@@ -83,6 +88,20 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
         m_ui->gameTimeGroupBox->setCheckable(true);
         m_ui->legacySettingsGroupBox->setCheckable(true);
 
+        connect(m_ui->openGlobalSettingsButton, &QCommandLinkButton::clicked, this, &MinecraftSettingsWidget::openGlobalSettings);
+    }
+
+    if (m_instance == nullptr && m_groupSettings != nullptr) {
+        // these settings only make sense for a single instance
+        m_ui->instanceAccountGroupBox->hide();
+        m_ui->serverJoinGroupBox->hide();
+        m_ui->globalDataPacksGroupBox->hide();
+        m_ui->loaderGroup->hide();
+        m_ui->countGameTime->hide();
+        m_ui->latestMCVersionGroupBox->hide();
+    }
+
+    if (m_instance != nullptr) {
         m_quickPlaySingleplayer = m_instance->traits().contains("feature:is_quick_play_singleplayer");
         if (m_quickPlaySingleplayer) {
             auto* worlds = m_instance->worldList();
@@ -98,7 +117,6 @@ MinecraftSettingsWidget::MinecraftSettingsWidget(MinecraftInstance* instance, QW
             m_ui->serverJoinAddressButton->setStyleSheet("QRadioButton::indicator { width: 0px; height: 0px; }");
         }
 
-        connect(m_ui->openGlobalSettingsButton, &QCommandLinkButton::clicked, this, &MinecraftSettingsWidget::openGlobalSettings);
         connect(m_ui->serverJoinAddressButton, &QAbstractButton::toggled, m_ui->serverJoinAddress, &QWidget::setEnabled);
         connect(m_ui->worldJoinButton, &QAbstractButton::toggled, m_ui->worldsCb, &QWidget::setEnabled);
 
@@ -161,18 +179,23 @@ MinecraftSettingsWidget::~MinecraftSettingsWidget()
     delete m_ui;
 }
 
+SettingsObject* MinecraftSettingsWidget::settings() const
+{
+    if (m_instance != nullptr) {
+        return m_instance->settings();
+    }
+    if (m_groupSettings != nullptr) {
+        return m_groupSettings;
+    }
+    return APPLICATION->settings();
+}
+
 void MinecraftSettingsWidget::loadSettings()
 {
-    SettingsObject* settings = nullptr;
-
-    if (m_instance != nullptr) {
-        settings = m_instance->settings();
-    } else {
-        settings = APPLICATION->settings();
-    }
+    SettingsObject* settings = this->settings();
 
     // Game Window
-    m_ui->windowSizeGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideWindow").toBool() ||
+    m_ui->windowSizeGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideWindow").toBool() ||
                                          settings->get("OverrideMiscellaneous").toBool());
     m_ui->maximizedCheckBox->setChecked(settings->get("LaunchMaximized").toBool());
     m_ui->windowWidthSpinBox->setValue(settings->get("MinecraftWinWidth").toInt());
@@ -181,15 +204,15 @@ void MinecraftSettingsWidget::loadSettings()
     m_ui->quitAfterGameStopCheck->setChecked(settings->get("QuitAfterGameStop").toBool());
 
     // Game Time
-    m_ui->gameTimeGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideGameTime").toBool());
+    m_ui->gameTimeGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideGameTime").toBool());
     m_ui->showGameTime->setChecked(settings->get("ShowGameTime").toBool());
     m_ui->recordGameTime->setChecked(settings->get("RecordGameTime").toBool());
     m_ui->countGameTime->setChecked(settings->get("CountGameTime").toBool());
-    m_ui->showGlobalGameTime->setChecked(m_instance == nullptr && settings->get("ShowGlobalGameTime").toBool());
-    m_ui->showGameTimeWithoutDays->setChecked(m_instance == nullptr && settings->get("ShowGameTimeWithoutDays").toBool());
+    m_ui->showGlobalGameTime->setChecked(!isOverrideMode() && settings->get("ShowGlobalGameTime").toBool());
+    m_ui->showGameTimeWithoutDays->setChecked(!isOverrideMode() && settings->get("ShowGameTimeWithoutDays").toBool());
 
     // Console
-    m_ui->consoleSettingsBox->setChecked(m_instance == nullptr || settings->get("OverrideConsole").toBool());
+    m_ui->consoleSettingsBox->setChecked(!isOverrideMode() || settings->get("OverrideConsole").toBool());
     m_ui->showConsoleCheck->setChecked(settings->get("ShowConsole").toBool());
     m_ui->autoCloseConsoleCheck->setChecked(settings->get("AutoCloseConsole").toBool());
     m_ui->showConsoleErrorCheck->setChecked(settings->get("ShowConsoleOnError").toBool());
@@ -199,20 +222,20 @@ void MinecraftSettingsWidget::loadSettings()
     }
 
     // Custom commands
-    m_ui->customCommands->initialize(m_instance != nullptr, m_instance == nullptr || settings->get("OverrideCommands").toBool(),
+    m_ui->customCommands->initialize(isOverrideMode(), !isOverrideMode() || settings->get("OverrideCommands").toBool(),
                                      settings->get("PreLoadCommand").toString(), settings->get("PreLaunchCommand").toString(),
                                      settings->get("WrapperCommand").toString(), settings->get("PostExitCommand").toString());
 
     // Environment variables
-    m_ui->environmentVariables->initialize(m_instance != nullptr, m_instance == nullptr || settings->get("OverrideEnv").toBool(),
+    m_ui->environmentVariables->initialize(isOverrideMode(), !isOverrideMode() || settings->get("OverrideEnv").toBool(),
                                            Json::toMap(settings->get("Env").toString()));
 
     // Legacy Tweaks
-    m_ui->legacySettingsGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideLegacySettings").toBool());
+    m_ui->legacySettingsGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideLegacySettings").toBool());
     m_ui->onlineFixes->setChecked(settings->get("OnlineFixes").toBool());
 
     // Native Libraries
-    m_ui->nativeWorkaroundsGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideNativeWorkarounds").toBool());
+    m_ui->nativeWorkaroundsGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideNativeWorkarounds").toBool());
     m_ui->useNativeGLFWCheck->setChecked(settings->get("UseNativeGLFW").toBool());
     m_ui->lineEditGLFWPath->setText(settings->get("CustomGLFWPath").toString().trimmed());
 #ifdef Q_OS_LINUX
@@ -236,7 +259,7 @@ void MinecraftSettingsWidget::loadSettings()
 #endif
 
     // Performance
-    m_ui->perfomanceGroupBox->setChecked(m_instance == nullptr || settings->get("OverridePerformance").toBool());
+    m_ui->perfomanceGroupBox->setChecked(!isOverrideMode() || settings->get("OverridePerformance").toBool());
     m_ui->enableFeralGamemodeCheck->setChecked(settings->get("EnableFeralGamemode").toBool());
     m_ui->enableMangoHud->setChecked(settings->get("EnableMangoHud").toBool());
     m_ui->useDiscreteGpuCheck->setChecked(settings->get("UseDiscreteGpu").toBool());
@@ -332,18 +355,12 @@ void MinecraftSettingsWidget::loadSettings()
 
 void MinecraftSettingsWidget::saveSettings()
 {
-    SettingsObject* settings = nullptr;
-
-    if (m_instance != nullptr) {
-        settings = m_instance->settings();
-    } else {
-        settings = APPLICATION->settings();
-    }
+    SettingsObject* settings = this->settings();
 
     // Console
-    bool console = m_instance == nullptr || m_ui->consoleSettingsBox->isChecked();
+    bool console = !isOverrideMode() || m_ui->consoleSettingsBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideConsole", console);
     }
 
@@ -358,9 +375,9 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     // Game Window
-    bool window = m_instance == nullptr || m_ui->windowSizeGroupBox->isChecked();
+    bool window = !isOverrideMode() || m_ui->windowSizeGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideWindow", window);
         settings->set("OverrideMiscellaneous", window);
     }
@@ -380,9 +397,9 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     // Custom Commands
-    bool custcmd = m_instance == nullptr || m_ui->customCommands->checked();
+    bool custcmd = !isOverrideMode() || m_ui->customCommands->checked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideCommands", custcmd);
     }
 
@@ -399,9 +416,9 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     // Environment Variables
-    auto env = m_instance == nullptr || m_ui->environmentVariables->override();
+    auto env = !isOverrideMode() || m_ui->environmentVariables->override();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideEnv", env);
     }
 
@@ -412,9 +429,9 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     // Workarounds
-    bool workarounds = m_instance == nullptr || m_ui->nativeWorkaroundsGroupBox->isChecked();
+    bool workarounds = !isOverrideMode() || m_ui->nativeWorkaroundsGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideNativeWorkarounds", workarounds);
     }
 
@@ -435,9 +452,9 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     // Performance
-    bool performance = m_instance == nullptr || m_ui->perfomanceGroupBox->isChecked();
+    bool performance = !isOverrideMode() || m_ui->perfomanceGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverridePerformance", performance);
     }
 
@@ -454,11 +471,13 @@ void MinecraftSettingsWidget::saveSettings()
     }
 
     // Game time
-    bool gameTime = m_instance == nullptr || m_ui->gameTimeGroupBox->isChecked();
+    bool gameTime = !isOverrideMode() || m_ui->gameTimeGroupBox->isChecked();
+
+    if (isOverrideMode()) {
+        settings->set("OverrideGameTime", gameTime);
+    }
 
     if (m_instance != nullptr) {
-        settings->set("OverrideGameTime", gameTime);
-
         if (gameTime) {
             settings->set("CountGameTime", m_ui->countGameTime->isChecked());
         } else {
@@ -474,7 +493,7 @@ void MinecraftSettingsWidget::saveSettings()
         settings->reset("RecordGameTime");
     }
 
-    if (m_instance == nullptr) {
+    if (!isOverrideMode()) {
         settings->set("ShowGlobalGameTime", m_ui->showGlobalGameTime->isChecked());
         settings->set("ShowGameTimeWithoutDays", m_ui->showGameTimeWithoutDays->isChecked());
     }
@@ -516,9 +535,9 @@ void MinecraftSettingsWidget::saveSettings()
         settings->set("UseLatestMinecraftVersionType", m_ui->releaseRadioButton->isChecked() ? "release" : "any");
     }
 
-    bool overrideLegacySettings = m_instance == nullptr || m_ui->legacySettingsGroupBox->isChecked();
+    bool overrideLegacySettings = !isOverrideMode() || m_ui->legacySettingsGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideLegacySettings", overrideLegacySettings);
     }
 

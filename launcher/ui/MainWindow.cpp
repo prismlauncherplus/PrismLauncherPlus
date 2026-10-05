@@ -101,6 +101,7 @@
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/ExportInstanceDialog.h"
 #include "ui/dialogs/ExportPackDialog.h"
+#include "ui/dialogs/GroupSettingsDialog.h"
 #include "ui/dialogs/IconPickerDialog.h"
 #include "ui/dialogs/ImportResourceDialog.h"
 #include "ui/dialogs/NewInstanceDialog.h"
@@ -323,6 +324,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         view->setSourceOfGroupCollapseStatus(
             [](const QString& groupName) -> bool { return APPLICATION->instances()->isGroupCollapsed(groupName); });
         connect(view, &InstanceView::groupStateChanged, APPLICATION->instances(), &InstanceList::on_GroupStateChanged);
+        view->setSourceOfGroupSettingsStatus(
+            [](const QString& groupName) -> bool { return APPLICATION->instances()->groupHasSettings(groupName); });
+        connect(view, &InstanceView::groupSettingsRequested, this, &MainWindow::showGroupSettings);
         ui->horizontalLayout->addWidget(view);
     }
     // The cat background
@@ -573,6 +577,10 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
             QAction* actionRenameGroup = new QAction(tr("&Rename group"), this);
             connect(actionRenameGroup, &QAction::triggered, this, [this, group] { renameGroup(group); });
             actions.append(actionRenameGroup);
+
+            QAction* actionGroupSettings = new QAction(QIcon::fromTheme("settings"), tr("Group &settings"), this);
+            connect(actionGroupSettings, &QAction::triggered, this, [this, group] { showGroupSettings(group); });
+            actions.append(actionGroupSettings);
         }
     }
     QMenu myMenu;
@@ -1336,9 +1344,11 @@ void MainWindow::on_actionChangeInstGroup_triggered()
     dst = dst.simplified();
 
     if (ok) {
+        QStringList ids;
         for (auto* instance : instances) {
-            APPLICATION->instances()->setInstanceGroup(instance->id(), dst);
+            ids.append(instance->id());
         }
+        APPLICATION->instances()->setInstanceGroups(ids, dst);
     }
 }
 
@@ -1346,10 +1356,26 @@ void MainWindow::deleteGroup(QString group)
 {
     Q_ASSERT(!group.isEmpty());
 
-    const int reply = QMessageBox::question(this, tr("Delete group"), tr("Are you sure you want to delete the group '%1'?").arg(group),
-                                            QMessageBox::Yes | QMessageBox::No);
+    QString message = tr("Are you sure you want to delete the group '%1'?").arg(group);
+    if (APPLICATION->instances()->groupHasSettings(group)) {
+        message += "\n\n" + tr("Its settings will be deleted as well, and its instances will use the global settings instead.");
+    }
+    const int reply = QMessageBox::question(this, tr("Delete group"), message, QMessageBox::Yes | QMessageBox::No);
     if (reply == QMessageBox::Yes)
         APPLICATION->instances()->deleteGroup(group);
+}
+
+void MainWindow::showGroupSettings(QString group)
+{
+    auto* settings = APPLICATION->instances()->groupSettings(group);
+    if (!settings)
+        return;
+
+    GroupSettingsDialog dialog(group, settings, this);
+    if (dialog.exec() == QDialog::Accepted) {
+        // the settings button shows whether the group overrides anything
+        view->viewport()->update();
+    }
 }
 
 void MainWindow::renameGroup(QString group)

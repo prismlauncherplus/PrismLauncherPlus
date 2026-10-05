@@ -403,6 +403,10 @@ set(SETTINGS_SOURCES
     settings/INISettingsObject.h
     settings/OverrideSetting.cpp
     settings/OverrideSetting.h
+    settings/InheritedSetting.cpp
+    settings/InheritedSetting.h
+    settings/InheritableSettings.cpp
+    settings/InheritableSettings.h
     settings/PassthroughSetting.cpp
     settings/PassthroughSetting.h
     settings/Setting.cpp
@@ -1047,6 +1051,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/CustomMessageBox.h
     ui/dialogs/BulkRenameDialog.cpp
     ui/dialogs/BulkRenameDialog.h
+    ui/dialogs/GroupSettingsDialog.cpp
+    ui/dialogs/GroupSettingsDialog.h
     ui/dialogs/ExportInstanceDialog.cpp
     ui/dialogs/ExportInstanceDialog.h
     ui/dialogs/ExportPackDialog.cpp

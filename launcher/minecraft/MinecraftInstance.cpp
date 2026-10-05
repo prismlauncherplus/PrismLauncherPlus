@@ -40,6 +40,7 @@
 #include "BuildConfig.h"
 #include "Json.h"
 #include "QObjectPtr.h"
+#include "settings/InheritableSettings.h"
 #include "settings/Setting.h"
 #include "settings/SettingsObject.h"
 
@@ -185,65 +186,13 @@ void MinecraftInstance::loadSpecificSettings()
     if (isSpecificSettingsLoaded())
         return;
 
-    // Java Settings
-    auto locationOverride = m_settings->registerSetting("OverrideJavaLocation", false);
-    auto argsOverride = m_settings->registerSetting("OverrideJavaArgs", false);
     m_settings->registerSetting("AutomaticJava", false);
     m_settings->registerSetting("UseLatestMinecraftVersion", false);
     m_settings->registerSetting("UseLatestMinecraftVersionType", "release");
 
-    if (auto global_settings = globalSettings()) {
-        m_settings->registerOverride(global_settings->getSetting("JavaPath"), locationOverride);
-        m_settings->registerOverride(global_settings->getSetting("JvmArgs"), argsOverride);
-        m_settings->registerOverride(global_settings->getSetting("IgnoreJavaCompatibility"), locationOverride);
-
-        // special!
-        m_settings->registerPassthrough(global_settings->getSetting("JavaSignature"), locationOverride);
-        m_settings->registerPassthrough(global_settings->getSetting("JavaArchitecture"), locationOverride);
-        m_settings->registerPassthrough(global_settings->getSetting("JavaRealArchitecture"), locationOverride);
-        m_settings->registerPassthrough(global_settings->getSetting("JavaVersion"), locationOverride);
-        m_settings->registerPassthrough(global_settings->getSetting("JavaVendor"), locationOverride);
-
-        // Window Size
-        auto windowSetting = m_settings->registerSetting("OverrideWindow", false);
-        m_settings->registerOverride(global_settings->getSetting("LaunchMaximized"), windowSetting);
-        m_settings->registerOverride(global_settings->getSetting("MinecraftWinWidth"), windowSetting);
-        m_settings->registerOverride(global_settings->getSetting("MinecraftWinHeight"), windowSetting);
-
-        // Memory
-        auto memorySetting = m_settings->registerSetting("OverrideMemory", false);
-        m_settings->registerOverride(global_settings->getSetting("MinMemAlloc"), memorySetting);
-        m_settings->registerOverride(global_settings->getSetting("MaxMemAlloc"), memorySetting);
-        m_settings->registerOverride(global_settings->getSetting("PermGen"), memorySetting);
-        m_settings->registerOverride(global_settings->getSetting("LowMemWarning"), memorySetting);
-
-        // Native library workarounds
-        auto nativeLibraryWorkaroundsOverride = m_settings->registerSetting("OverrideNativeWorkarounds", false);
-        m_settings->registerOverride(global_settings->getSetting("UseNativeOpenAL"), nativeLibraryWorkaroundsOverride);
-        m_settings->registerOverride(global_settings->getSetting("CustomOpenALPath"), nativeLibraryWorkaroundsOverride);
-        m_settings->registerOverride(global_settings->getSetting("UseNativeGLFW"), nativeLibraryWorkaroundsOverride);
-        m_settings->registerOverride(global_settings->getSetting("CustomGLFWPath"), nativeLibraryWorkaroundsOverride);
-        m_settings->registerOverride(global_settings->getSetting("UseNativeSDL"), nativeLibraryWorkaroundsOverride);
-        m_settings->registerOverride(global_settings->getSetting("CustomSDLPath"), nativeLibraryWorkaroundsOverride);
-
-        // Performance related options
-        auto performanceOverride = m_settings->registerSetting("OverridePerformance", false);
-        m_settings->registerOverride(global_settings->getSetting("EnableFeralGamemode"), performanceOverride);
-        m_settings->registerOverride(global_settings->getSetting("EnableMangoHud"), performanceOverride);
-        m_settings->registerOverride(global_settings->getSetting("UseDiscreteGpu"), performanceOverride);
-        m_settings->registerOverride(global_settings->getSetting("UseZink"), performanceOverride);
-
-        // Miscellaneous
-        auto miscellaneousOverride = m_settings->registerSetting("OverrideMiscellaneous", false);
-        m_settings->registerOverride(global_settings->getSetting("CloseAfterLaunch"), miscellaneousOverride);
-        m_settings->registerOverride(global_settings->getSetting("QuitAfterGameStop"), miscellaneousOverride);
-
-        // Legacy-related options
-        auto legacySettings = m_settings->registerSetting("OverrideLegacySettings", false);
-        m_settings->registerOverride(global_settings->getSetting("OnlineFixes"), legacySettings);
-
-        auto envSetting = m_settings->registerSetting("OverrideEnv", false);
-        m_settings->registerOverride(global_settings->getSetting("Env"), envSetting);
+    if (globalSettings()) {
+        // Java, memory, window, native libraries, performance, ... overrides
+        InheritableSettings::registerMinecraft(m_settings.get(), [this](const QString& id) { return inheritedSetting(id); });
 
         if (m_settings->get("InstanceType").toString() != "OneSix") {
             m_settings->set("InstanceType", "OneSix");

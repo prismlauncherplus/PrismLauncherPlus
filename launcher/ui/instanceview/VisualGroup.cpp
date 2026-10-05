@@ -38,6 +38,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QIcon>
 #include <QModelIndex>
 #include <QPainter>
 #include <QtMath>
@@ -128,6 +129,11 @@ VisualGroup::HitResults VisualGroup::hitScan(const QPoint& pos) const
         results = VisualGroup::HeaderHit;
         int collapseSize = headerHeight() - 4;
 
+        if (hasSettingsButton() && settingsButtonRect(y_start).contains(pos)) {
+            results |= VisualGroup::SettingsHit;
+            return results;
+        }
+
         // the icon
         QRect iconRect = QRect(view->m_leftMargin + 2, 2 + y_start, view->width() - 4, collapseSize);
         if (iconRect.contains(pos)) {
@@ -137,6 +143,18 @@ VisualGroup::HitResults VisualGroup::hitScan(const QPoint& pos) const
         results |= VisualGroup::BodyHit;
     }
     return results;
+}
+
+QRect VisualGroup::settingsButtonRect(int headerTop) const
+{
+    // keep in sync with the layout in drawHeader
+    QFont font(QApplication::font());
+    font.setBold(true);
+    const QFontMetrics fontMetrics(font);
+    const int textOffsetLeft = (fontMetrics.height() / 2 + 7) * 2;
+    const int size = fontMetrics.height();
+    const int left = textOffsetLeft + fontMetrics.horizontalAdvance(text) + 6;
+    return QRect(left, headerTop + 7, size, size);
 }
 
 void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& option) const
@@ -192,14 +210,28 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
     }
     // END: text
 
+    // BEGIN: settings button
+    int settingsButtonWidth = 0;
+    if (hasSettingsButton()) {
+        const QRect buttonRect = settingsButtonRect(option.rect.top());
+        settingsButtonWidth = buttonRect.width() + 6;
+        // groups that don't change any settings get a faded button
+        const bool hasSettings = view->m_fGroupHasSettings && view->m_fGroupHasSettings(text);
+        painter->save();
+        painter->setOpacity(hasSettings ? 1.0 : 0.45);
+        QIcon::fromTheme("settings").paint(painter, buttonRect);
+        painter->restore();
+    }
+    // END: settings button
+
     // BEGIN: horizontal line
     {
         penColor.setAlphaF(0.05f);
         pen.setColor(penColor);
         painter->setPen(pen);
         // startPoint is left + arrow + text + space
-        const int startPoint =
-            optRect.left() + fontMetrics.height() + fontMetrics.size(Qt::AlignLeft | Qt::AlignVCenter, textToDraw).width() + 20;
+        const int startPoint = optRect.left() + fontMetrics.height() +
+                               fontMetrics.size(Qt::AlignLeft | Qt::AlignVCenter, textToDraw).width() + 20 + settingsButtonWidth;
         painter->setRenderHint(QPainter::Antialiasing, false);
         QPolygon polygon;
         // for some reason the height (yPos) doesn't look centered, so we are adding 1 to the center height

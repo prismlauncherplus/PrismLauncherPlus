@@ -54,12 +54,12 @@
 
 #include "ui_JavaSettingsWidget.h"
 
-JavaSettingsWidget::JavaSettingsWidget(MinecraftInstance* instance, QWidget* parent)
-    : QWidget(parent), m_instance(instance), m_ui(new Ui::JavaSettingsWidget)
+JavaSettingsWidget::JavaSettingsWidget(MinecraftInstance* instance, SettingsObject* groupSettings, QWidget* parent)
+    : QWidget(parent), m_instance(instance), m_groupSettings(groupSettings), m_ui(new Ui::JavaSettingsWidget)
 {
     m_ui->setupUi(this);
 
-    if (m_instance == nullptr) {
+    if (!isOverrideMode()) {
         m_ui->javaDownloadBtn->hide();
         if (BuildConfig.JAVA_DOWNLOADER_ENABLED) {
             connect(m_ui->autodetectJavaCheckBox, &QCheckBox::checkStateChanged, this, [this](bool state) {
@@ -72,7 +72,8 @@ JavaSettingsWidget::JavaSettingsWidget(MinecraftInstance* instance, QWidget* par
             m_ui->autodownloadJavaCheckBox->hide();
         }
     } else {
-        m_ui->javaDownloadBtn->setVisible(BuildConfig.JAVA_DOWNLOADER_ENABLED);
+        // the java downloader installs java for a specific instance
+        m_ui->javaDownloadBtn->setVisible(BuildConfig.JAVA_DOWNLOADER_ENABLED && m_instance != nullptr);
         m_ui->skipWizardCheckBox->hide();
         m_ui->autodetectJavaCheckBox->hide();
         m_ui->autodownloadJavaCheckBox->hide();
@@ -81,22 +82,24 @@ JavaSettingsWidget::JavaSettingsWidget(MinecraftInstance* instance, QWidget* par
         m_ui->memoryGroupBox->setCheckable(true);
         m_ui->javaArgumentsGroupBox->setCheckable(true);
 
-        SettingsObject* settings = m_instance->settings();
+        SettingsObject* settings = this->settings();
 
         connect(settings->getSetting("OverrideJavaLocation").get(), &Setting::SettingChanged, m_ui->javaInstallationGroupBox,
                 [this, settings] { m_ui->javaInstallationGroupBox->setChecked(settings->get("OverrideJavaLocation").toBool()); });
         connect(settings->getSetting("JavaPath").get(), &Setting::SettingChanged, m_ui->javaInstallationGroupBox,
                 [this, settings] { m_ui->javaPathTextBox->setText(settings->get("JavaPath").toString()); });
 
-        connect(m_ui->javaDownloadBtn, &QPushButton::clicked, this, [this] {
-            auto* javaDialog = new Java::InstallDialog({}, m_instance, this);
-            javaDialog->exec();
-        });
-        connect(m_ui->javaPathTextBox, &QLineEdit::textChanged, this, [this](const QString& newValue) {
-            if (m_instance->settings()->get("JavaPath").toString() != newValue) {
-                m_instance->settings()->set("AutomaticJava", false);
-            }
-        });
+        if (m_instance != nullptr) {
+            connect(m_ui->javaDownloadBtn, &QPushButton::clicked, this, [this] {
+                auto* javaDialog = new Java::InstallDialog({}, m_instance, this);
+                javaDialog->exec();
+            });
+            connect(m_ui->javaPathTextBox, &QLineEdit::textChanged, this, [this](const QString& newValue) {
+                if (m_instance->settings()->get("JavaPath").toString() != newValue) {
+                    m_instance->settings()->set("AutomaticJava", false);
+                }
+            });
+        }
     }
 
     connect(m_ui->javaTestBtn, &QPushButton::clicked, this, &JavaSettingsWidget::onJavaTest);
@@ -115,15 +118,20 @@ JavaSettingsWidget::~JavaSettingsWidget()
     delete m_ui;
 }
 
+SettingsObject* JavaSettingsWidget::settings() const
+{
+    if (m_instance != nullptr) {
+        return m_instance->settings();
+    }
+    if (m_groupSettings != nullptr) {
+        return m_groupSettings;
+    }
+    return APPLICATION->settings();
+}
+
 void JavaSettingsWidget::loadSettings()
 {
-    SettingsObject* settings = nullptr;
-
-    if (m_instance != nullptr) {
-        settings = m_instance->settings();
-    } else {
-        settings = APPLICATION->settings();
-    }
+    SettingsObject* settings = this->settings();
 
     // Java Settings
     m_ui->javaInstallationGroupBox->setChecked(settings->get("OverrideJavaLocation").toBool());
@@ -131,10 +139,10 @@ void JavaSettingsWidget::loadSettings()
 
     m_ui->skipCompatibilityCheckBox->setChecked(settings->get("IgnoreJavaCompatibility").toBool());
 
-    m_ui->javaArgumentsGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideJavaArgs").toBool());
+    m_ui->javaArgumentsGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideJavaArgs").toBool());
     m_ui->jvmArgsTextBox->setPlainText(settings->get("JvmArgs").toString());
 
-    if (m_instance == nullptr) {
+    if (!isOverrideMode()) {
         m_ui->skipWizardCheckBox->setChecked(settings->get("IgnoreJavaWizard").toBool());
         m_ui->autodetectJavaCheckBox->setChecked(settings->get("AutomaticJavaSwitch").toBool());
         m_ui->autodownloadJavaCheckBox->setEnabled(m_ui->autodetectJavaCheckBox->isChecked());
@@ -142,7 +150,7 @@ void JavaSettingsWidget::loadSettings()
     }
 
     // Memory
-    m_ui->memoryGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideMemory").toBool());
+    m_ui->memoryGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideMemory").toBool());
     int min = settings->get("MinMemAlloc").toInt();
     int max = settings->get("MaxMemAlloc").toInt();
     if (min < max) {
@@ -156,24 +164,18 @@ void JavaSettingsWidget::loadSettings()
     m_ui->lowMemWarningCheckBox->setChecked(settings->get("LowMemWarning").toBool());
 
     // Java arguments
-    m_ui->javaArgumentsGroupBox->setChecked(m_instance == nullptr || settings->get("OverrideJavaArgs").toBool());
+    m_ui->javaArgumentsGroupBox->setChecked(!isOverrideMode() || settings->get("OverrideJavaArgs").toBool());
     m_ui->jvmArgsTextBox->setPlainText(settings->get("JvmArgs").toString());
 }
 
 void JavaSettingsWidget::saveSettings()
 {
-    SettingsObject* settings = nullptr;
-
-    if (m_instance != nullptr) {
-        settings = m_instance->settings();
-    } else {
-        settings = APPLICATION->settings();
-    }
+    SettingsObject* settings = this->settings();
 
     // Java Install Settings
-    bool javaInstall = m_instance == nullptr || m_ui->javaInstallationGroupBox->isChecked();
+    bool javaInstall = !isOverrideMode() || m_ui->javaInstallationGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideJavaLocation", javaInstall);
     }
 
@@ -185,16 +187,16 @@ void JavaSettingsWidget::saveSettings()
         settings->reset("IgnoreJavaCompatibility");
     }
 
-    if (m_instance == nullptr) {
+    if (!isOverrideMode()) {
         settings->set("IgnoreJavaWizard", m_ui->skipWizardCheckBox->isChecked());
         settings->set("AutomaticJavaSwitch", m_ui->autodetectJavaCheckBox->isChecked());
         settings->set("AutomaticJavaDownload", m_ui->autodownloadJavaCheckBox->isChecked());
     }
 
     // Memory
-    bool memory = m_instance == nullptr || m_ui->memoryGroupBox->isChecked();
+    bool memory = !isOverrideMode() || m_ui->memoryGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideMemory", memory);
     }
 
@@ -218,9 +220,9 @@ void JavaSettingsWidget::saveSettings()
     }
 
     // Java arguments
-    bool javaArgs = m_instance == nullptr || m_ui->javaArgumentsGroupBox->isChecked();
+    bool javaArgs = !isOverrideMode() || m_ui->javaArgumentsGroupBox->isChecked();
 
-    if (m_instance != nullptr) {
+    if (isOverrideMode()) {
         settings->set("OverrideJavaArgs", javaArgs);
     }
 
@@ -256,10 +258,12 @@ void JavaSettingsWidget::onJavaTest()
 
     QString jvmArgs;
 
-    if (m_instance == nullptr || m_ui->javaArgumentsGroupBox->isChecked()) {
+    if (!isOverrideMode() || m_ui->javaArgumentsGroupBox->isChecked()) {
         jvmArgs = m_ui->jvmArgsTextBox->toPlainText().replace("\n", " ");
     } else {
-        jvmArgs = APPLICATION->settings()->get("JvmArgs").toString();
+        // what the instance or group inherits
+        auto* parent = m_instance != nullptr ? m_instance->groupSettings() : nullptr;
+        jvmArgs = (parent != nullptr ? parent : APPLICATION->settings())->get("JvmArgs").toString();
     }
 
     m_checker.reset(new JavaCommon::TestCheck(this, m_ui->javaPathTextBox->text(), jvmArgs, m_ui->minMemSpinBox->value(),

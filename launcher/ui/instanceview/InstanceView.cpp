@@ -48,6 +48,7 @@
 #include <QRubberBand>
 #include <QScrollBar>
 #include <QStyleOptionRubberBand>
+#include <QToolTip>
 #include <QtMath>
 
 #include "VisualGroup.h"
@@ -293,6 +294,12 @@ void InstanceView::mousePressEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton) {
         VisualGroup::HitResults hitResult;
         m_pressedCategory = categoryAt(geometryPos, hitResult);
+        if (m_pressedCategory && hitResult & VisualGroup::SettingsHit) {
+            // the settings are opened on release, like a button
+            m_pressedSettingsGroup = m_pressedCategory->text;
+            event->accept();
+            return;
+        }
         if (m_pressedCategory && hitResult & VisualGroup::CheckboxHit) {
             setState(m_pressedCategory->collapsed ? ExpandingState : CollapsingState);
             event->accept();
@@ -350,7 +357,7 @@ void InstanceView::mouseMoveEvent(QMouseEvent* event)
     QPoint visualPos = event->pos();
     QPoint geometryPos = event->pos() + offset();
 
-    if (state() == ExpandingState || state() == CollapsingState) {
+    if (state() == ExpandingState || state() == CollapsingState || !m_pressedSettingsGroup.isEmpty()) {
         return;
     }
 
@@ -412,6 +419,19 @@ void InstanceView::mouseReleaseEvent(QMouseEvent* event)
     QPersistentModelIndex index = indexAt(visualPos);
 
     VisualGroup::HitResults hitResult;
+
+    if (!m_pressedSettingsGroup.isEmpty()) {
+        const QString group = m_pressedSettingsGroup;
+        m_pressedSettingsGroup.clear();
+        m_pressedCategory = nullptr;
+        auto* releasedCategory = categoryAt(geometryPos, hitResult);
+        if (event->button() == Qt::LeftButton && releasedCategory && releasedCategory->text == group &&
+            hitResult & VisualGroup::SettingsHit) {
+            emit groupSettingsRequested(group);
+        }
+        event->accept();
+        return;
+    }
 
     if (event->button() == Qt::LeftButton && m_pressedCategory != nullptr && m_pressedCategory == categoryAt(geometryPos, hitResult)) {
         if (state() == ExpandingState) {
@@ -707,10 +727,7 @@ void InstanceView::dropEvent(QDropEvent* event)
                 return;
             }
             auto instanceIds = QString::fromUtf8(mimedata->data("application/x-instanceid")).split('\n', Qt::SkipEmptyParts);
-            auto instanceList = APPLICATION->instances();
-            for (const auto& instanceId : instanceIds) {
-                instanceList->setInstanceGroup(instanceId, group->text);
-            }
+            APPLICATION->instances()->setInstanceGroups(instanceIds, group->text);
             event->setDropAction(Qt::MoveAction);
             event->accept();
 
@@ -940,6 +957,21 @@ void InstanceView::deselectHiddenItems()
     } else if (!selectionModel()->isSelected(currentIndex())) {
         selectionModel()->setCurrentIndex(remaining.first(), QItemSelectionModel::NoUpdate);
     }
+}
+
+bool InstanceView::viewportEvent(QEvent* event)
+{
+    if (event->type() == QEvent::ToolTip) {
+        executeDelayedItemsLayout();
+        auto* helpEvent = static_cast<QHelpEvent*>(event);
+        VisualGroup::HitResults hitResult;
+        auto* group = categoryAt(helpEvent->pos() + offset(), hitResult);
+        if (group && hitResult & VisualGroup::SettingsHit) {
+            QToolTip::showText(helpEvent->globalPos(), tr("Settings of the group %1").arg(group->text), viewport());
+            return true;
+        }
+    }
+    return QAbstractItemView::viewportEvent(event);
 }
 
 void InstanceView::keyboardSearch(const QString& search)

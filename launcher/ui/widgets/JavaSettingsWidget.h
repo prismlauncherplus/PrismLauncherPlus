@@ -40,6 +40,7 @@
 #include "JavaCommon.h"
 
 class MinecraftInstance;
+class SettingsObject;
 
 namespace Ui {
 class JavaSettingsWidget;
@@ -50,7 +51,9 @@ class JavaSettingsWidget : public QWidget {
 
    public:
     explicit JavaSettingsWidget(QWidget* parent = nullptr) : JavaSettingsWidget(nullptr, parent) {}
-    explicit JavaSettingsWidget(MinecraftInstance* instance, QWidget* parent = nullptr);
+    explicit JavaSettingsWidget(MinecraftInstance* instance, QWidget* parent = nullptr) : JavaSettingsWidget(instance, nullptr, parent) {}
+    /// edits the settings of the instance, or the default settings of an instance group, or the global settings if both are null
+    JavaSettingsWidget(MinecraftInstance* instance, SettingsObject* groupSettings, QWidget* parent);
     ~JavaSettingsWidget() override;
 
     void loadSettings();
@@ -63,7 +66,12 @@ class JavaSettingsWidget : public QWidget {
     void updateThresholds();
 
    private:
+    /// instances and groups only override parts of the global settings
+    bool isOverrideMode() const { return m_instance != nullptr || m_groupSettings != nullptr; }
+    SettingsObject* settings() const;
+
     MinecraftInstance* m_instance;
+    SettingsObject* m_groupSettings;
     Ui::JavaSettingsWidget* m_ui;
     unique_qobject_ptr<JavaCommon::TestCheck> m_checker;
 };

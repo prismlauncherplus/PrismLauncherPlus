@@ -43,6 +43,8 @@
 #include <QSet>
 #include <QStack>
 #include <cstdint>
+#include <map>
+#include <memory>
 
 #include "minecraft/MinecraftInstance.h"
 
@@ -114,6 +116,14 @@ class InstanceList : public QAbstractListModel {
 
     GroupId getInstanceGroup(const InstanceId& id) const;
     void setInstanceGroup(const InstanceId& id, GroupId name);
+    /// move several instances to a group, saving the group list only once
+    void setInstanceGroups(const QStringList& ids, const GroupId& name);
+
+    /// The default settings of the instances in a group, which override the global settings and are overridden by the instances.
+    /// Returns nullptr for ungrouped instances.
+    SettingsObject* groupSettings(const GroupId& group);
+    /// whether the group overrides any of the global settings
+    bool groupHasSettings(const GroupId& group);
 
     void deleteGroup(const GroupId& name);
     void renameGroup(const GroupId& src, const GroupId& dst);
@@ -206,7 +216,13 @@ class InstanceList : public QAbstractListModel {
     bool m_instancesProbed = false;
 
     bool trashInstanceInto(const InstanceId& id, QList<TrashHistoryItem>& batch);
+    /// @return whether the group of the instance changed, the group list still has to be saved
+    bool assignInstanceGroup(const InstanceId& id, GroupId name);
+    static QString groupSettingsPath(const GroupId& group);
 
     // each entry is a batch of instances that were trashed together and are restored together
     QStack<QList<TrashHistoryItem>> m_trashHistory;
+
+    // loaded lazily, the settings of a group stay around when it has no instances so they come back with the group
+    std::map<GroupId, std::unique_ptr<SettingsObject>> m_groupSettings;
 };

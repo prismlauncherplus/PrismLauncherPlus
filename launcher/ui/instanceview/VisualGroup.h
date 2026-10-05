@@ -99,11 +99,17 @@ struct VisualGroup {
     /// x/y position of the given item inside the group (in items!)
     QPair<int, int> positionOf(const QModelIndex& index) const;
 
-    enum HitResult { NoHit = 0x0, TextHit = 0x1, CheckboxHit = 0x2, HeaderHit = 0x4, BodyHit = 0x8 };
+    enum HitResult { NoHit = 0x0, TextHit = 0x1, CheckboxHit = 0x2, HeaderHit = 0x4, BodyHit = 0x8, SettingsHit = 0x10 };
     Q_DECLARE_FLAGS(HitResults, HitResult)
 
     /// shoot! BANG! what did we hit?
     HitResults hitScan(const QPoint& pos) const;
+
+    /// whether the header has a settings button, the ungrouped "group" uses the global settings so it has none
+    bool hasSettingsButton() const { return !text.isEmpty(); }
+
+    /// the area of the settings button next to the group name, for a header starting at the given height
+    QRect settingsButtonRect(int headerTop) const;
 
     QList<QModelIndex> items() const;
 };

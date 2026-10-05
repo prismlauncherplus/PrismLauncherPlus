@@ -156,6 +156,7 @@ class MainWindow : public QMainWindow {
     void on_actionDeleteInstance_triggered();
 
     void deleteGroup(QString group);
+    void showGroupSettings(QString group);
     void renameGroup(QString group);
     void undoTrashInstance();
 

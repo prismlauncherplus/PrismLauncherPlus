@@ -37,6 +37,9 @@
 
 #include "BaseInstance.h"
 
+#include "settings/InheritableSettings.h"
+#include "settings/InheritedSetting.h"
+
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
@@ -94,10 +97,8 @@ BaseInstance::BaseInstance(SettingsObject* globalSettings, std::unique_ptr<Setti
         m_uuid = savedUUID;
     }
 
-    // Game time override
-    auto gameTimeOverride = m_settings->registerSetting("OverrideGameTime", false);
-    m_settings->registerOverride(globalSettings->getSetting("ShowGameTime"), gameTimeOverride);
-    m_settings->registerOverride(globalSettings->getSetting("RecordGameTime"), gameTimeOverride);
+    // Game time, custom commands and console overrides
+    InheritableSettings::registerCommon(m_settings.get(), [this](const QString& id) { return inheritedSetting(id); });
     m_settings->registerSetting("CountGameTime", true);
 
     // NOTE: Sometimees InstanceType is already registered, as it was used to identify the type of
@@ -105,20 +106,6 @@ BaseInstance::BaseInstance(SettingsObject* globalSettings, std::unique_ptr<Setti
     if (!m_settings->getSetting("InstanceType")) {
         m_settings->registerSetting("InstanceType", "");
     }
-
-    // Custom Commands
-    auto commandSetting = m_settings->registerSetting({ "OverrideCommands", "OverrideLaunchCmd" }, false);
-    m_settings->registerOverride(globalSettings->getSetting("PreLoadCommand"), commandSetting);
-    m_settings->registerOverride(globalSettings->getSetting("PreLaunchCommand"), commandSetting);
-    m_settings->registerOverride(globalSettings->getSetting("WrapperCommand"), commandSetting);
-    m_settings->registerOverride(globalSettings->getSetting("PostExitCommand"), commandSetting);
-
-    // Console
-    auto consoleSetting = m_settings->registerSetting("OverrideConsole", false);
-    m_settings->registerOverride(globalSettings->getSetting("ShowConsole"), consoleSetting);
-    m_settings->registerOverride(globalSettings->getSetting("AutoCloseConsole"), consoleSetting);
-    m_settings->registerOverride(globalSettings->getSetting("ShowConsoleOnError"), consoleSetting);
-    m_settings->registerOverride(globalSettings->getSetting("LogPrePostOutput"), consoleSetting);
 
     m_settings->registerPassthrough(globalSettings->getSetting("ConsoleMaxLines"), nullptr);
     m_settings->registerPassthrough(globalSettings->getSetting("ConsoleOverflowStop"), nullptr);
@@ -363,6 +350,27 @@ SettingsObject* BaseInstance::settings()
     loadSpecificSettings();
 
     return m_settings.get();
+}
+
+SettingsObject* BaseInstance::groupSettings() const
+{
+    return m_groupSettingsLookup ? m_groupSettingsLookup() : nullptr;
+}
+
+bool BaseInstance::isOverriding(const QString& gate)
+{
+    if (settings()->get(gate).toBool()) {
+        return true;
+    }
+    auto* group = groupSettings();
+    return group && group->get(gate).toBool();
+}
+
+std::shared_ptr<Setting> BaseInstance::inheritedSetting(const QString& id)
+{
+    auto global = m_globalSettings->getSetting(id);
+    Q_ASSERT(global);
+    return std::make_shared<InheritedSetting>(global, [this] { return groupSettings(); });
 }
 
 bool BaseInstance::canLaunch() const
