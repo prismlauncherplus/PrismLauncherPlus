@@ -113,7 +113,13 @@ Result<GameOptionsProfile> GameOptionsProfile::fromJson(const QJsonObject& json)
             }
             auto updated = QDateTime::fromString(valueObject.value("updated").toString(), Qt::ISODateWithMs);
             // the band is derived from the value, so a hand edited file can't put a value in the wrong band
-            profile.setValue(option.key(), valueObject.value("value").toString(), dataVersion, updated);
+            const auto value = valueObject.value("value").toString();
+            // two stored values in the same band (e.g. after a change of the band rules): keep the newer one
+            if (auto existing = profile.value(option.key(), GameOptionsCompat::bandOf(option.key(), value));
+                existing && existing->updated > updated) {
+                continue;
+            }
+            profile.setValue(option.key(), value, dataVersion, updated);
         }
     }
     return profile;

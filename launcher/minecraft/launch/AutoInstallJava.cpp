@@ -66,7 +66,8 @@ void AutoInstallJava::executeTask()
     // Without this, instances that switched Java automatically before joining the group would keep their own Java.
     if (settings->get("AutomaticJava").toBool() && settings->get("OverrideJavaLocation").toBool()) {
         auto* group = m_instance->groupSettings();
-        if (group && group->get("OverrideJavaLocation").toBool() && QFileInfo::exists(group->get("JavaPath").toString())) {
+        // like CheckJava, a path like "java" is looked up on the PATH
+        if (group && group->get("OverrideJavaLocation").toBool() && !FS::ResolveExecutable(group->get("JavaPath").toString()).isEmpty()) {
             settings->set("OverrideJavaLocation", false);
             settings->set("AutomaticJava", false);
             settings->reset("JavaPath");
@@ -74,7 +75,7 @@ void AutoInstallJava::executeTask()
         }
     }
     if (!APPLICATION->settings()->get("AutomaticJavaSwitch").toBool() ||
-        (m_instance->isOverriding("OverrideJavaLocation") && QFileInfo::exists(settings->get("JavaPath").toString()))) {
+        (m_instance->isOverriding("OverrideJavaLocation") && !FS::ResolveExecutable(settings->get("JavaPath").toString()).isEmpty())) {
         emitSucceeded();
         return;
     }

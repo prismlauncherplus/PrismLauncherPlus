@@ -314,33 +314,67 @@ QString InstanceList::groupSettingsPath(const GroupId& group)
 void InstanceList::migrateGroupSettingsFiles()
 {
     // The first version named the files after the percent encoded group name only. Those names can look like the current ones
-    // (a group called "group-x" had the file "group-x.cfg"), so ambiguous files are decided by which group exists, and this is
-    // only done once.
+    // (a group called "group-x" had the file "group-x.cfg", which is also the current name for a group "x"), so ambiguous files
+    // are decided by which files and groups exist. This is only done once.
     const QDir dir(QDir::current().filePath("groupsettings"));
     const auto marker = dir.filePath(".migrated");
     if (!dir.exists() || QFileInfo::exists(marker)) {
         return;
     }
-    for (const auto& file : dir.entryInfoList({ "*.cfg" }, QDir::Files)) {
+    auto oldPath = [&dir](const QString& group) { return dir.filePath(QString::fromLatin1(QUrl::toPercentEncoding(group)) + ".cfg"); };
+    // old group names starting with '.' gave hidden files
+    const auto files = dir.entryInfoList({ "*.cfg" }, QDir::Files | QDir::Hidden);
+
+    bool complete = true;
+    auto migrate = [&complete](const QString& from, const QString& group) {
+        const auto target = groupSettingsPath(group);
+        if (QFileInfo(target).absoluteFilePath() == QFileInfo(from).absoluteFilePath() || QFileInfo::exists(target)) {
+            return;
+        }
+        if (!QFile::rename(from, target)) {
+            qWarning() << "Failed to migrate the settings of group" << group;
+            complete = false;
+        }
+    };
+    auto isOld = [this, &oldPath](const QFileInfo& file) {
         const auto base = file.completeBaseName();
+        if (!base.startsWith("group-") && !base.startsWith("grouphash-")) {
+            return true;
+        }
         if (base.startsWith("grouphash-")) {
-            continue;
+            // hashes are long, a group name of that form in the old scheme would have needed a group named like a hash
+            return false;
         }
         const auto oldName = QUrl::fromPercentEncoding(base.toLatin1());
-        if (base.startsWith("group-")) {
-            const auto newName = QUrl::fromPercentEncoding(base.mid(6).toLatin1());
-            // current name of an existing group, or nothing tells it is an old one: keep it
-            if (m_groupNameCache.contains(newName) || !m_groupNameCache.contains(oldName)) {
-                continue;
-            }
+        const auto newName = QUrl::fromPercentEncoding(base.mid(6).toLatin1());
+        // the current scheme encodes upper case letters, so a name it wouldn't produce is old
+        if (QFileInfo(groupSettingsPath(newName)).fileName() != file.fileName()) {
+            return true;
         }
-        auto target = groupSettingsPath(oldName);
-        if (target != file.absoluteFilePath() && !QFileInfo::exists(target) && !QFile::rename(file.absoluteFilePath(), target)) {
-            qWarning() << "Failed to migrate the settings of group" << oldName;
+        // the group "x" still has its old file "x.cfg", so "group-x.cfg" belongs to the group "group-x"
+        if (QFileInfo::exists(oldPath(newName))) {
+            return true;
+        }
+        return !m_groupNameCache.contains(newName) && m_groupNameCache.contains(oldName);
+    };
+
+    // first the old files that look like current ones, so they don't block the targets of the others
+    for (const auto& file : files) {
+        if (file.completeBaseName().startsWith("group-") && isOld(file)) {
+            migrate(file.absoluteFilePath(), QUrl::fromPercentEncoding(file.completeBaseName().toLatin1()));
         }
     }
-    if (auto written = FS::write(marker, QByteArray()); !written) {
-        qWarning() << "Could not mark the group settings as migrated:" << written.error();
+    for (const auto& file : files) {
+        if (!file.completeBaseName().startsWith("group-") && isOld(file)) {
+            migrate(file.absoluteFilePath(), QUrl::fromPercentEncoding(file.completeBaseName().toLatin1()));
+        }
+    }
+
+    // try again next time if something couldn't be moved
+    if (complete) {
+        if (auto written = FS::write(marker, QByteArray()); !written) {
+            qWarning() << "Could not mark the group settings as migrated:" << written.error();
+        }
     }
 }
 
