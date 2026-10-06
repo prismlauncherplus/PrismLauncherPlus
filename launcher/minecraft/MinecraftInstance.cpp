@@ -224,6 +224,9 @@ void MinecraftInstance::loadSpecificSettings()
 
     // Join server on launch, this does not have a global override
     m_settings->registerSetting("OverrideModDownloadLoaders", false);
+
+    // the game options profile applied last, to back up options.txt when another profile replaces options
+    m_settings->registerSetting("GameOptionsLastProfile", "");
     m_settings->registerSetting("ModDownloadLoaders", "[]");
 
     qDebug() << "Instance-type specific settings were loaded!";

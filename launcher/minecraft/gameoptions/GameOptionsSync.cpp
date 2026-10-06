@@ -33,10 +33,13 @@
 #include "minecraft/PackProfile.h"
 #include "ui/dialogs/GameOptionsReviewDialog.h"
 
+#include <QApplication>
+
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
 #include <signal.h>
+#include <unistd.h>
 #include <cerrno>
 #endif
 
@@ -74,20 +77,60 @@ bool isProcessRunning(qint64 pid)
 #endif
 }
 
-std::optional<Session> loadSession(MinecraftInstance* instance)
+/// when the process started, where the system tells
+std::optional<QDateTime> processStartTime(qint64 pid)
 {
-    if (!QFileInfo::exists(sessionPath(instance))) {
+#if defined(Q_OS_WIN)
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!process) {
         return std::nullopt;
     }
-    auto data = FS::read(sessionPath(instance));
-    auto document = data ? QJsonDocument::fromJson(*data) : QJsonDocument();
-    auto session = Session::fromJson(document.object());
-    if (!session) {
-        qWarning() << "Ignoring the broken game options session of" << instance->id() << ":" << session.error();
-        removeSessionFile(instance);
+    FILETIME creation, exit, kernel, user;
+    bool ok = GetProcessTimes(process, &creation, &exit, &kernel, &user);
+    CloseHandle(process);
+    if (!ok) {
         return std::nullopt;
     }
-    return *session;
+    // 100 ns intervals since 1601
+    const auto ticks = (static_cast<qint64>(creation.dwHighDateTime) << 32) | creation.dwLowDateTime;
+    return QDateTime::fromMSecsSinceEpoch((ticks - 116444736000000000LL) / 10000, QTimeZone::UTC);
+#elif defined(Q_OS_LINUX)
+    // field 22 of /proc/<pid>/stat is the start time in clock ticks after boot; the fields before it can contain spaces
+    QFile stat(QString("/proc/%1/stat").arg(pid));
+    QFile systemStat("/proc/stat");
+    if (!stat.open(QIODevice::ReadOnly) || !systemStat.open(QIODevice::ReadOnly)) {
+        return std::nullopt;
+    }
+    const auto fields = QString::fromLatin1(stat.readAll()).section(')', -1).split(' ', Qt::SkipEmptyParts);
+    qint64 bootTime = -1;
+    for (const auto& line : QString::fromLatin1(systemStat.readAll()).split('\n')) {
+        if (line.startsWith("btime ")) {
+            bootTime = line.mid(6).trimmed().toLongLong();
+        }
+    }
+    // fields after the command name start with field 3 (state)
+    if (fields.size() < 20 || bootTime < 0) {
+        return std::nullopt;
+    }
+    const auto ticksPerSecond = sysconf(_SC_CLK_TCK);
+    return QDateTime::fromSecsSinceEpoch(bootTime + fields[19].toLongLong() / ticksPerSecond, QTimeZone::UTC);
+#else
+    Q_UNUSED(pid);
+    return std::nullopt;
+#endif
+}
+
+/// whether the game of the session is still running, and not just another process with the same id
+bool isGameRunning(const Session& session)
+{
+    if (!session.gamePid || !isProcessRunning(*session.gamePid)) {
+        return false;
+    }
+    auto started = processStartTime(*session.gamePid);
+    if (started && session.gameStarted) {
+        return std::abs(started->secsTo(*session.gameStarted)) <= 120;
+    }
+    return true;
 }
 
 QString keybindFormatName(GameOptionsCompat::KeybindFormat format)
@@ -104,6 +147,22 @@ QString keybindFormatName(GameOptionsCompat::KeybindFormat format)
 }
 }  // namespace
 
+std::optional<Session> loadSession(MinecraftInstance* instance)
+{
+    if (!QFileInfo::exists(sessionPath(instance))) {
+        return std::nullopt;
+    }
+    auto data = FS::read(sessionPath(instance));
+    auto document = data ? QJsonDocument::fromJson(*data) : QJsonDocument();
+    auto session = Session::fromJson(document.object());
+    if (!session) {
+        qWarning() << "Ignoring the broken game options session of" << instance->id() << ":" << session.error();
+        removeSessionFile(instance);
+        return std::nullopt;
+    }
+    return *session;
+}
+
 QJsonObject Session::toJson() const
 {
     QJsonObject snapshotObject;
@@ -119,6 +178,9 @@ QJsonObject Session::toJson() const
     }
     if (gamePid) {
         json.insert("gamePid", *gamePid);
+    }
+    if (gameStarted) {
+        json.insert("gameStarted", gameStarted->toString(Qt::ISODate));
     }
     return json;
 }
@@ -139,6 +201,9 @@ Result<Session> Session::fromJson(const QJsonObject& json)
                                                     : GameOptionsCompat::KeybindFormat::Unknown;
     if (json.contains("gamePid")) {
         session.gamePid = json.value("gamePid").toInteger();
+    }
+    if (json.contains("gameStarted")) {
+        session.gameStarted = QDateTime::fromString(json.value("gameStarted").toString(), Qt::ISODate);
     }
     const auto snapshotObject = json.value("snapshot").toObject();
     for (auto iter = snapshotObject.begin(); iter != snapshotObject.end(); ++iter) {
@@ -183,14 +248,30 @@ std::optional<Session> start(MinecraftInstance* instance, const Logger& log)
 {
     // the changes of an earlier session that were never written back come first
     if (auto leftover = loadSession(instance)) {
-        leftover->gamePid.reset();
-        if (finish(instance, *leftover, log, ReviewMode::Modal) == FinishResult::Pending) {
-            // applying the profile now would overwrite those changes, so keep collecting them in the earlier session
-            log(QObject::tr("The game options changed the last time are not saved to the profile yet, so the profile is not applied "
-                            "this time."),
+        const auto* leftoverProfile = APPLICATION->gameOptionsProfiles()->profile(leftover->profileId);
+        const auto leftoverName = leftoverProfile ? leftoverProfile->name : leftover->profileId;
+        if (isGameRunning(*leftover)) {
+            // the game of an earlier launch outlived the launcher; applying the profile would mix into its options
+            log(QObject::tr("The game of an earlier launch of this instance is still running, so the game options profile is not "
+                            "applied. Changed options are saved to \"%1\" afterwards.")
+                    .arg(leftoverName),
                 MessageLevel::Warning);
-            saveSession(instance, *leftover);
             return leftover;
+        }
+        leftover->gamePid.reset();
+        leftover->gameStarted.reset();
+        if (finish(instance, *leftover, log, ReviewMode::Modal) == FinishResult::Pending) {
+            // finish() may have changed the session file (review), so continue from that
+            auto pending = loadSession(instance).value_or(*leftover);
+            pending.gamePid.reset();
+            pending.gameStarted.reset();
+            // applying the profile now would overwrite those changes, so keep collecting them in the earlier session
+            log(QObject::tr("The game options changed the last time are not saved to the profile \"%1\" yet, so the profile is not "
+                            "applied this time.")
+                    .arg(leftoverName),
+                MessageLevel::Warning);
+            saveSession(instance, pending);
+            return pending;
         }
     }
 
@@ -240,8 +321,14 @@ std::optional<Session> start(MinecraftInstance* instance, const Logger& log)
                     replaced++;
                 }
             }
-            const auto backup = path + ".before-profile";
-            if (replaced > 0 && !QFileInfo::exists(backup) && QFile::copy(path, backup)) {
+            // whenever a profile (other than the one used last time) replaces options, keep the previous ones
+            const bool otherProfile = instance->settings()->get("GameOptionsLastProfile").toString() != profileId;
+            if (replaced > 0 && otherProfile) {
+                const auto backup = path + ".before-profile-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+                if (!QFile::copy(path, backup)) {
+                    log(QObject::tr("Could not back up options.txt, so the game options profile is not applied."), MessageLevel::Warning);
+                    return std::nullopt;
+                }
                 log(QObject::tr("The profile replaced %n option(s) of this instance, the previous options are kept in %1.", nullptr,
                                 replaced)
                         .arg(QFileInfo(backup).fileName()),
@@ -254,6 +341,7 @@ std::optional<Session> start(MinecraftInstance* instance, const Logger& log)
             }
         }
         session.snapshot = result.snapshot;
+        instance->settings()->set("GameOptionsLastProfile", profileId);
         auto message =
             QObject::tr("Applied %n option(s) of the game options profile \"%1\".", nullptr, static_cast<int>(result.applied.size()))
                 .arg(profile->name);
@@ -276,17 +364,43 @@ void saveSession(MinecraftInstance* instance, const Session& session)
     }
 }
 
-void removeSession(const QString& instanceId)
+void reviewed(const QString& instanceId, const QList<GameOptionChange>& decided)
 {
-    if (auto* instance = APPLICATION->instances()->getInstanceById(instanceId)) {
-        removeSessionFile(instance);
+    auto* instance = APPLICATION->instances()->getInstanceById(instanceId);
+    if (!instance) {
+        return;
     }
+    auto session = loadSession(instance);
+    if (!session) {
+        return;
+    }
+    // saved or discarded, either way the user decided about these values
+    for (const auto& change : decided) {
+        session->snapshot.insert(change.key, change.newValue);
+    }
+    // a running game (e.g. launched again before reviewing) still uses the session, and options changed since then still count
+    if (!instance->isRunning()) {
+        auto file = OptionsFile::load(optionsPath(instance));
+        if (file && GameOptionsMerger::collectChanges(session->snapshot, *file).isEmpty()) {
+            removeSessionFile(instance);
+            return;
+        }
+    }
+    saveSession(instance, *session);
 }
 
-FinishResult finish(MinecraftInstance* instance, const Session& session, const Logger& log, ReviewMode reviewMode)
+FinishResult finish(MinecraftInstance* instance, const Session& fallback, const Logger& log, ReviewMode reviewMode)
 {
+    // the session file is what counts: reviewing changes updates it
+    const auto stored = loadSession(instance);
+    const Session& session = stored ? *stored : fallback;
+
     if (auto* review = GameOptionsReviewDialog::openFor(instance->id())) {
-        // the user hasn't decided about the earlier changes yet
+        // the user hasn't decided about the earlier changes yet; show everything that changed by now
+        if (auto file = OptionsFile::load(optionsPath(instance))) {
+            review->setChanges(GameOptionsMerger::collectChanges(session.snapshot, *file),
+                               GameOptionsCompat::ClientFormat::detect(*file, session.client.dataVersion));
+        }
         review->raise();
         review->activateWindow();
         return FinishResult::Pending;
@@ -317,7 +431,8 @@ FinishResult finish(MinecraftInstance* instance, const Session& session, const L
     if (instance->settings()->get("GameOptionsReviewChanges").toBool()) {
         // the session file stays until the user saves or discards the changes, so closing the dialog (or the launcher) loses nothing
         if (reviewMode == ReviewMode::Modal) {
-            GameOptionsReviewDialog dialog(instance->id(), instance->name(), session.profileId, changes, client);
+            GameOptionsReviewDialog dialog(instance->id(), instance->name(), session.profileId, changes, client,
+                                           QApplication::activeWindow());
             return dialog.exec() == QDialog::Rejected ? FinishResult::Pending : FinishResult::Done;
         }
         auto* dialog = new GameOptionsReviewDialog(instance->id(), instance->name(), session.profileId, changes, client);
@@ -347,7 +462,7 @@ void recoverSessions(InstanceList* instances)
         if (!session) {
             continue;
         }
-        if (session->gamePid && isProcessRunning(*session->gamePid)) {
+        if (isGameRunning(*session)) {
             // the game outlived the launcher and is still running, its changes are collected the next time it is launched
             qInfo() << "Not saving the game options of" << instance->id() << "yet, its game may still be running";
             continue;

@@ -27,7 +27,12 @@ void SyncGameOptions::executeTask()
         connect(m_parent, &LaunchTask::pidChanged, this, [this](qint64 pid) {
             if (m_session && pid > 0) {
                 m_session->gamePid = pid;
-                GameOptionsSync::saveSession(m_parent->instance(), *m_session);
+                m_session->gameStarted = QDateTime::currentDateTimeUtc();
+                // update the stored session, which a review may have changed since it started
+                auto stored = GameOptionsSync::loadSession(m_parent->instance()).value_or(*m_session);
+                stored.gamePid = m_session->gamePid;
+                stored.gameStarted = m_session->gameStarted;
+                GameOptionsSync::saveSession(m_parent->instance(), stored);
             }
         });
     }

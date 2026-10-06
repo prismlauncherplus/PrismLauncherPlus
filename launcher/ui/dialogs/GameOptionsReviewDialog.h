@@ -46,7 +46,11 @@ class GameOptionsReviewDialog : public QDialog {
 
     void accept() override;
 
+    /// show these changes instead, e.g. when the game was played again before the user decided
+    void setChanges(QList<GameOptionChange> changes, GameOptionsCompat::ClientFormat client);
+
    private:
+    void populate();
     void discard();
     void setAllChecked(bool checked);
 

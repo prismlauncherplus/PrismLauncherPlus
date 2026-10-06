@@ -17,6 +17,7 @@
  */
 #pragma once
 
+#include <QDateTime>
 #include <QJsonObject>
 #include <QMap>
 #include <QString>
@@ -24,6 +25,7 @@
 #include <optional>
 
 #include "GameOptionsCompat.h"
+#include "GameOptionsProfile.h"
 #include "MessageLevel.h"
 #include "Result.h"
 
@@ -42,8 +44,10 @@ struct Session {
     QString profileId;
     GameOptionsCompat::ClientFormat client;
     QMap<QString, QString> snapshot;
-    /// the game's process, to not collect the changes of a game that is still running after the launcher restarted
+    /// the game's process and when it started, to not collect the changes of a game that is still running after the launcher
+    /// restarted (the start time tells it apart from an unrelated process that got the same id later)
     std::optional<qint64> gamePid;
+    std::optional<QDateTime> gameStarted;
 
     QJsonObject toJson() const;
     static Result<Session> fromJson(const QJsonObject& json);
@@ -72,13 +76,15 @@ enum class ReviewMode {
 };
 
 /// Write the options changed since the session started back to the profile, or let the user review them first.
-/// The session file is only removed once the changes are saved or discarded.
+/// The session file is only removed once the changes are saved or discarded. It is what counts if it exists, as reviewing
+/// changes updates it; `session` is only used when it couldn't be saved.
 FinishResult finish(MinecraftInstance* instance, const Session& session, const Logger& log, ReviewMode reviewMode);
 
-/// save the session file again, e.g. once the game's process id is known
+std::optional<Session> loadSession(MinecraftInstance* instance);
 void saveSession(MinecraftInstance* instance, const Session& session);
-/// the user decided about the changes of the instance's session (saved or discarded them)
-void removeSession(const QString& instanceId);
+/// The user saved or discarded these changes of the instance's session, so they are no longer changes.
+/// The session ends if nothing else changed and the game isn't running.
+void reviewed(const QString& instanceId, const QList<GameOptionChange>& decided);
 
 /// finish the sessions left over from a launcher that crashed or quit while the game was running
 void recoverSessions(InstanceList* instances);

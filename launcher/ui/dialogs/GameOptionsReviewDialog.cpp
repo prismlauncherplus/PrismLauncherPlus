@@ -72,20 +72,7 @@ GameOptionsReviewDialog::GameOptionsReviewDialog(QString instanceId,
     m_list->setHeaderLabels({ tr("Option"), tr("Before"), tr("After") });
     m_list->setRootIsDecorated(false);
     m_list->header()->setSectionResizeMode(QHeaderView::Stretch);
-    // changed options first; new ones (options the profile didn't have yet) after them
-    QList<QTreeWidgetItem*> newItems;
-    for (qsizetype i = 0; i < m_changes.size(); i++) {
-        const auto& change = m_changes[i];
-        auto* item = new QTreeWidgetItem({ change.key, change.oldValue.value_or(tr("(new)")), change.newValue });
-        item->setCheckState(0, Qt::Checked);
-        item->setData(0, Qt::UserRole, static_cast<int>(i));
-        if (change.oldValue) {
-            m_list->addTopLevelItem(item);
-        } else {
-            newItems.append(item);
-        }
-    }
-    m_list->addTopLevelItems(newItems);
+    populate();
     layout->addWidget(m_list, 1);
 
     auto* selectionButtons = new QHBoxLayout();
@@ -110,6 +97,32 @@ GameOptionsReviewDialog::GameOptionsReviewDialog(QString instanceId,
     layout->addWidget(buttons);
 }
 
+void GameOptionsReviewDialog::populate()
+{
+    m_list->clear();
+    // changed options first; new ones (options the profile didn't have yet) after them
+    QList<QTreeWidgetItem*> newItems;
+    for (qsizetype i = 0; i < m_changes.size(); i++) {
+        const auto& change = m_changes[i];
+        auto* item = new QTreeWidgetItem({ change.key, change.oldValue.value_or(tr("(new)")), change.newValue });
+        item->setCheckState(0, Qt::Checked);
+        item->setData(0, Qt::UserRole, static_cast<int>(i));
+        if (change.oldValue) {
+            m_list->addTopLevelItem(item);
+        } else {
+            newItems.append(item);
+        }
+    }
+    m_list->addTopLevelItems(newItems);
+}
+
+void GameOptionsReviewDialog::setChanges(QList<GameOptionChange> changes, GameOptionsCompat::ClientFormat client)
+{
+    m_changes = std::move(changes);
+    m_client = client;
+    populate();
+}
+
 GameOptionsReviewDialog::~GameOptionsReviewDialog()
 {
     if (openDialogs().value(m_instanceId) == this) {
@@ -125,7 +138,7 @@ GameOptionsReviewDialog* GameOptionsReviewDialog::openFor(const QString& instanc
 
 void GameOptionsReviewDialog::discard()
 {
-    GameOptionsSync::removeSession(m_instanceId);
+    GameOptionsSync::reviewed(m_instanceId, m_changes);
     done(Discarded);
 }
 
@@ -149,6 +162,7 @@ void GameOptionsReviewDialog::accept()
         CustomMessageBox::selectable(this, tr("Could not save the game options"), result.error(), QMessageBox::Critical)->exec();
         return;
     }
-    GameOptionsSync::removeSession(m_instanceId);
+    // the unchecked ones are discarded
+    GameOptionsSync::reviewed(m_instanceId, m_changes);
     QDialog::accept();
 }
