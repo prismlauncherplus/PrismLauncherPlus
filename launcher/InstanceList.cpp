@@ -72,9 +72,7 @@ const static int g_GROUP_FILE_FORMAT_VERSION = 1;
 InstanceList::InstanceList(SettingsObject* settings, const QStringList& instDirs, QObject* parent)
     : QAbstractListModel(parent), m_globalSettings(settings), m_watcher(new QFileSystemWatcher(this))
 {
-    resumeWatch();
-
-    connect(this, &InstanceList::instancesChanged, this, &InstanceList::providerUpdated);
+    connect(this, &InstanceList::instancesChanged, this, &InstanceList::loadList);
 
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, &InstanceList::instanceDirContentsChanged);
 
@@ -212,8 +210,14 @@ bool InstanceList::setData(const QModelIndex& index, const QVariant& value, int 
     }
     auto* pdata = static_cast<MinecraftInstance*>(index.internalPointer());
     auto newName = value.toString();
+    newName.replace('\n', ' ');
+    newName = newName.trimmed();
+    newName.truncate(128);
     if (pdata->name() == newName) {
         return true;
+    }
+    if (newName.isEmpty()) {
+        return false;
     }
     pdata->setName(newName);
     return true;
@@ -779,7 +783,6 @@ InstanceList::InstListError InstanceList::loadList()
     if (!newList.empty()) {
         add(newList);
     }
-    m_dirty = false;
     migrateTotalPlayTime();
     return NoError;
 }
@@ -820,31 +823,6 @@ void InstanceList::add(std::vector<std::unique_ptr<MinecraftInstance>>& t)
         connect(inst, &MinecraftInstance::propertiesChanged, this, [this, inst]() { propertiesChanged(inst); });
     }
     endInsertRows();
-}
-
-void InstanceList::resumeWatch()
-{
-    if (m_watchLevel > 0) {
-        qWarning() << "Bad suspend level resume in instance list";
-        return;
-    }
-    m_watchLevel++;
-    if (m_watchLevel > 0 && m_dirty) {
-        loadList();
-    }
-}
-
-void InstanceList::suspendWatch()
-{
-    m_watchLevel--;
-}
-
-void InstanceList::providerUpdated()
-{
-    m_dirty = true;
-    if (m_watchLevel == 1) {
-        loadList();
-    }
 }
 
 MinecraftInstance* InstanceList::getInstanceById(const QString& instId) const

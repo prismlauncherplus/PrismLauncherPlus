@@ -230,17 +230,12 @@ std::optional<int> dataVersionFromJar(MinecraftInstance* instance)
         return std::nullopt;
     }
 
-    QByteArray versionJson;
     MMCZip::ArchiveReader jar(jars.first());
-    jar.parse([&versionJson](MMCZip::ArchiveReader::File* file, bool& stop) {
-        if (file->filename() == "version.json") {
-            versionJson = file->readAll();
-            stop = true;
-            return true;
-        }
-        return file->skip();
-    });
-    auto worldVersion = QJsonDocument::fromJson(versionJson).object().value("world_version");
+    const auto versionJson = jar.readFile("version.json");
+    if (!versionJson) {
+        return std::nullopt;
+    }
+    auto worldVersion = QJsonDocument::fromJson(*versionJson).object().value("world_version");
     return worldVersion.isDouble() ? std::optional<int>(worldVersion.toInt()) : std::nullopt;
 }
 

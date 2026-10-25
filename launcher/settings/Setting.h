@@ -102,6 +102,8 @@ class Setting : public QObject {
     virtual void reset();
 
    protected:
+    QVariant retrieve() const;
+
     /// whether the storage has a value for this setting, as opposed to falling back to the default
     bool hasStoredValue() const;
 
