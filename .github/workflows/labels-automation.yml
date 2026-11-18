@@ -20,7 +20,8 @@ jobs:
   run-labels-script:
     name: Run script
     runs-on: ubuntu-slim
-    if: github.repository_owner == 'PrismLauncher'
+    # Requires the pull request GitHub App (PULL_REQUEST_APP_ID variable + PULL_REQUEST_APP_PRIVATE_KEY secret)
+    if: github.repository == 'prismlauncherplus/PrismLauncherPlus' && vars.PULL_REQUEST_APP_ID != ''
 
     steps:
       - name: Generate token

@@ -1,12 +1,5 @@
 {
-  description = "A custom launcher for Minecraft that allows you to easily manage multiple installations of Minecraft at once (Fork of MultiMC)";
-
-  nixConfig = {
-    extra-substituters = [ "https://prismlauncher.cachix.org" ];
-    extra-trusted-public-keys = [
-      "prismlauncher.cachix.org-1:9/n/FGyABA2jLUVfY+DEp4hKds/rwO+SCOtbOkDzd+c="
-    ];
-  };
+  description = "Prism Launcher Plus: an unofficial fork of Prism Launcher, a custom launcher for Minecraft that allows you to easily manage multiple installations of Minecraft at once";
 
   inputs = {
     nixpkgs.url = "https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz";
@@ -92,7 +85,7 @@
           packages' = self.packages.${system};
 
           welcomeMessage = ''
-            Welcome to the Prism Launcher repository! 🌈
+            Welcome to the Prism Launcher Plus repository! 🌈
 
             We just set some things up for you. To get building, you can run:
 
@@ -102,21 +95,20 @@
             $ ninjaInstallPhase
             ```
 
-            Feel free to ask any questions in our Discord server or Matrix space:
-              - https://prismlauncher.org/discord
-              - https://matrix.to/#/#prismlauncher:matrix.org
+            Questions and bug reports go to this fork's issue tracker, not to upstream Prism Launcher:
+              - https://github.com/prismlauncherplus/PrismLauncherPlus/issues
 
             And thanks for helping out :)
           '';
 
           # Re-use our package wrapper to wrap our development environment
-          qt-wrapper-env = packages'.prismlauncher.overrideAttrs (old: {
+          qt-wrapper-env = packages'.prismlauncherplus.overrideAttrs (old: {
             name = "qt-wrapper-env";
 
             # Required to use script-based makeWrapper below
             strictDeps = true;
 
-            # We don't need/want the unwrapped Prism package
+            # We don't need/want the unwrapped Prism Launcher Plus package
             paths = [ ];
 
             nativeBuildInputs = old.nativeBuildInputs or [ ] ++ [
@@ -134,9 +126,9 @@
 
         {
           default = mkShell {
-            name = "prism-launcher";
+            name = "prism-launcher-plus";
 
-            inputsFrom = [ packages'.prismlauncher-unwrapped ];
+            inputsFrom = [ packages'.prismlauncherplus-unwrapped ];
 
             packages = [
               pkgs.ccache
@@ -162,7 +154,7 @@
             ];
 
             cmakeBuildType = "Debug";
-            cmakeFlags = [ "-GNinja" ] ++ packages'.prismlauncher-unwrapped.cmakeFlags;
+            cmakeFlags = [ "-GNinja" ] ++ packages'.prismlauncherplus-unwrapped.cmakeFlags;
             dontFixCmake = true;
 
             shellHook = ''
@@ -193,7 +185,7 @@
         in
 
         {
-          prismlauncher-unwrapped = prev.callPackage ./nix/unwrapped.nix {
+          prismlauncherplus-unwrapped = prev.callPackage ./nix/unwrapped.nix {
             inherit (llvm) stdenv;
             inherit
               libnbtplusplus
@@ -201,7 +193,7 @@
               ;
           };
 
-          prismlauncher = final.callPackage ./nix/wrapper.nix { };
+          prismlauncherplus = final.callPackage ./nix/wrapper.nix { };
         };
 
       packages = forAllSystems (
@@ -215,8 +207,8 @@
 
           # Grab our packages from it and set the default
           packages = {
-            inherit (prismPackages) prismlauncher-unwrapped prismlauncher;
-            default = prismPackages.prismlauncher;
+            inherit (prismPackages) prismlauncherplus-unwrapped prismlauncherplus;
+            default = prismPackages.prismlauncherplus;
           };
         in
 
@@ -234,11 +226,11 @@
         in
 
         {
-          prismlauncher-debug = packages'.prismlauncher.override {
-            prismlauncher-unwrapped = legacyPackages'.prismlauncher-unwrapped-debug;
+          prismlauncherplus-debug = packages'.prismlauncherplus.override {
+            prismlauncherplus-unwrapped = legacyPackages'.prismlauncherplus-unwrapped-debug;
           };
 
-          prismlauncher-unwrapped-debug = packages'.prismlauncher-unwrapped.overrideAttrs {
+          prismlauncherplus-unwrapped-debug = packages'.prismlauncherplus-unwrapped.overrideAttrs {
             cmakeBuildType = "Debug";
             dontStrip = true;
           };

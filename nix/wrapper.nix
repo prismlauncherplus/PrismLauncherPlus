@@ -24,7 +24,7 @@
   openal,
   pciutils,
   pipewire,
-  prismlauncher-unwrapped,
+  prismlauncherplus-unwrapped,
   sdl3,
   stdenv,
   symlinkJoin,
@@ -57,13 +57,13 @@ assert lib.assertMsg (
 ) "textToSpeechSupport only has an effect on Linux.";
 
 let
-  prismlauncher' = prismlauncher-unwrapped.override { inherit msaClientID; };
+  prismlauncherplus' = prismlauncherplus-unwrapped.override { inherit msaClientID; };
 in
 
 symlinkJoin {
-  name = "prismlauncher-${prismlauncher'.version}";
+  name = "prismlauncherplus-${prismlauncherplus'.version}";
 
-  paths = [ prismlauncher' ];
+  paths = [ prismlauncherplus' ];
 
   nativeBuildInputs = [
     kdePackages.wrapQtAppsHook
@@ -130,8 +130,8 @@ symlinkJoin {
 
     in
     [
-      "--set NIX_LAUNCHER_WRAPPER ${placeholder "out"}/bin/prismlauncher"
-      "--prefix PRISMLAUNCHER_JAVA_PATHS : ${lib.makeSearchPath "bin/java" jdks}"
+      "--set NIX_LAUNCHER_WRAPPER ${placeholder "out"}/bin/prismlauncherplus"
+      "--prefix PRISMLAUNCHERPLUS_JAVA_PATHS : ${lib.makeSearchPath "bin/java" jdks}"
     ]
     ++ lib.optionals stdenv.hostPlatform.isLinux [
       "--set LD_LIBRARY_PATH ${addDriverRunpath.driverLink}/lib:${lib.makeLibraryPath runtimeLibs}"
@@ -139,7 +139,7 @@ symlinkJoin {
     ];
 
   meta = {
-    inherit (prismlauncher'.meta)
+    inherit (prismlauncherplus'.meta)
       description
       longDescription
       homepage

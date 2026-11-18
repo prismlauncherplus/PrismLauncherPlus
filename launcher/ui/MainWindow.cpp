@@ -317,12 +317,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         view->setFrameShape(QFrame::NoFrame);
         // do not show ugly blue border on the mac
         view->setAttribute(Qt::WA_MacShowFocusRect, false);
-        connect(delegate, &ListViewDelegate::textChanged, this, [this](const QString& instanceId, const QString& before, const QString& after) {
-            // the edited instance, which isn't necessarily the selected one
-            if (auto* instance = APPLICATION->instances()->getInstanceById(instanceId)) {
-                handleInstanceRename(instance, before, after);
-            }
-        });
+        connect(delegate, &ListViewDelegate::textChanged, this,
+                [this](const QString& instanceId, const QString& before, const QString& after) {
+                    // the edited instance, which isn't necessarily the selected one
+                    if (auto* instance = APPLICATION->instances()->getInstanceById(instanceId)) {
+                        handleInstanceRename(instance, before, after);
+                    }
+                });
 
         view->installEventFilter(this);
         view->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -971,7 +972,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
                 } else {
                     CustomMessageBox::selectable(
                         this, tr("Error"),
-                        tr("Unsupported Modrinth link.\n\nPrism Launcher currently only supports modpack links such as "
+                        tr("Unsupported Modrinth link.\n\nPrism Launcher Plus currently only supports modpack links such as "
                            "modrinth://modpack/fabulously-optimized."),
                         QMessageBox::Critical)
                         ->show();

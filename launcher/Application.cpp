@@ -593,9 +593,15 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     }
 
     {
+        // Prism Launcher Plus keeps its data apart from upstream Prism Launcher, offer to copy an existing Prism Launcher setup
         auto migrated = handleDataMigration(
-            dataPath, FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), "../../PolyMC"), "PolyMC",
-            "polymc.cfg");
+            dataPath, FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), "../../PrismLauncher"),
+            "Prism Launcher", "prismlauncher.cfg");
+        if (!migrated) {
+            migrated = handleDataMigration(
+                dataPath, FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), "../../PolyMC"), "PolyMC",
+                "polymc.cfg");
+        }
         if (!migrated) {
             handleDataMigration(dataPath,
                                 FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), "../../multimc"),
@@ -650,8 +656,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
     // Initialize application settings
     {
-        // Provide a fallback for migration from PolyMC
-        m_settings.reset(new INISettingsObject({ BuildConfig.LAUNCHER_CONFIGFILE, "polymc.cfg", "multimc.cfg" }, this));
+        // Provide a fallback for migration from Prism Launcher and PolyMC
+        m_settings.reset(
+            new INISettingsObject({ BuildConfig.LAUNCHER_CONFIGFILE, "prismlauncher.cfg", "polymc.cfg", "multimc.cfg" }, this));
 
         // Theming
         m_settings->registerSetting("IconTheme", QString());
@@ -1121,7 +1128,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                               "\n"
                               "This likely means that a update attempt failed. Please ensure your installation is in working order before "
                               "proceeding.\n"
-                              "Check the Prism Launcher updater log at: \n"
+                              "Check the Prism Launcher Plus updater log at: \n"
                               "%7\n"
                               "for details on the last update attempt.\n"
                               "\n"
@@ -1161,7 +1168,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                               "\n"
                               "Please ensure your installation is in working order before "
                               "proceeding.\n"
-                              "Check the Prism Launcher updater log at: \n"
+                              "Check the Prism Launcher Plus updater log at: \n"
                               "%1\n"
                               "for details on the last update attempt.")
                                .arg(updateLogPath);
@@ -1196,7 +1203,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             auto infoMsg = tr("Update succeeded\n"
                               "\n"
                               "You are now running %1 .\n"
-                              "Check the Prism Launcher updater log at: \n"
+                              "Check the Prism Launcher Plus updater log at: \n"
                               "%2\n"
                               "for details.")
                                .arg(BuildConfig.printableVersionString())
@@ -1999,8 +2006,18 @@ bool Application::handleDataMigration(const QString& currentData, const QString&
         return false;
     }
 
+    // the old data may already be the current data, e.g. when the data dir is set to it explicitly
+    if (QFileInfo(oldData).canonicalFilePath() == QFileInfo(currentData).canonicalFilePath()) {
+        qDebug() << "<> No migration needed from" << name << "- it is the current data directory";
+        return false;
+    }
+
     QString message;
-    bool currentExists = QFileInfo::exists(FS::PathCombine(currentData, BuildConfig.LAUNCHER_CONFIGFILE));
+    // the config may still have the name of the launcher this data dir came from (see the settings fallback)
+    bool currentExists = false;
+    for (const auto& file : { BuildConfig.LAUNCHER_CONFIGFILE, QStringLiteral("prismlauncher.cfg") }) {
+        currentExists |= QFileInfo::exists(FS::PathCombine(currentData, file));
+    }
 
     if (currentExists) {
         message = tr("Old data from %1 was found, but you already have existing data for %2. Sadly you will need to migrate yourself. Do "
@@ -2051,6 +2068,14 @@ bool Application::handleDataMigration(const QString& currentData, const QString&
         filters.append(startsWith("libraries/"));
         filters.append(startsWith("mods/"));
         filters.append(startsWith("themes/"));
+        filters.append(equals("instgroups.json"));  // groups moved from instances/ to the data root
+        filters.append(startsWith("skins/"));
+        filters.append(startsWith("catpacks/"));
+        filters.append(startsWith("iconthemes/"));
+        filters.append(startsWith("instance-template/"));
+        // Prism Launcher Plus data, present when migrating from an older build of this fork that still used Prism Launcher's data dir
+        filters.append(startsWith("groupsettings/"));
+        filters.append(startsWith("gameoptions/"));
 
         ProgressDialog diag;
         DataMigrationTask task(oldData, currentData, any(std::move(filters)));

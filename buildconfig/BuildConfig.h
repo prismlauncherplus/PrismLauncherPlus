@@ -153,6 +153,9 @@ class Config {
      */
     QString MSA_CLIENT_ID;
 
+    /// Whether the Microsoft login redirects through the launcher's URL scheme (instead of a localhost server)
+    bool MSA_URL_SCHEME_CALLBACK = false;
+
     /**
      * Client API key for CurseForge
      */

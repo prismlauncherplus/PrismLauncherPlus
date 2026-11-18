@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop">
   <id>@Launcher_AppID@</id>
-  <name>Prism Launcher</name>
+  <name>@Launcher_DisplayName@</name>
   <summary>Custom Minecraft Launcher to easily manage multiple Minecraft installations at once</summary>
-  <developer id="org.prismlauncher">
-    <name>Prism Launcher Contributors</name>
+  <developer id="io.github.prismlauncherplus">
+    <name>Prism Launcher Plus Contributors</name>
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <description>
-    <p>Prism Launcher is a custom launcher for Minecraft that focuses on predictability, long term stability and simplicity.</p>
+    <p>Prism Launcher Plus is an unofficial fork of Prism Launcher, a custom launcher for Minecraft that focuses on predictability, long term stability and simplicity. It is not endorsed by or affiliated with the Prism Launcher project.</p>
     <p>Features:</p>
     <ul>
       <li>Easily install game modifications, such as Fabric, Forge and Quilt</li>
@@ -21,12 +21,15 @@
       <li>Isolate Minecraft instances to keep everything clean</li>
       <li>Install and update mods directly from the launcher</li>
       <li>Customize the launcher with themes, and more</li>
+      <li>Rename, delete, export and regroup many instances at once</li>
+      <li>Override settings for whole groups of instances</li>
+      <li>Share Minecraft game options between instances with profiles</li>
       <li>And cat :3</li>
     </ul>
   </description>
   <screenshots>
     <screenshot type="default">
-      <caption>The main Prism Launcher window</caption>
+      <caption>The main window</caption>
       <image type="source" width="1030" height="764">https://prismlauncher.org/img/screenshots/LauncherDark.png</image>
     </screenshot>
     <screenshot>
@@ -61,15 +64,9 @@
   <releases>
     <release version="@Launcher_VERSION_NAME@" date="@Launcher_BUILD_TIMESTAMP@"></release>
   </releases>
-  <url type="homepage">https://prismlauncher.org/</url>
-  <url type="bugtracker">https://github.com/PrismLauncher/PrismLauncher/issues</url>
-  <url type="faq">https://prismlauncher.org/wiki/overview/faq/</url>
-  <url type="help">https://prismlauncher.org/wiki/</url>
-  <url type="donation">https://opencollective.com/prismlauncher</url>
-  <url type="translate">https://hosted.weblate.org/projects/prismlauncher/launcher</url>
-  <url type="contact">https://prismlauncher.org/discord</url>
-  <url type="vcs-browser">https://github.com/PrismLauncher/PrismLauncher</url>
-  <url type="contribute">https://github.com/PrismLauncher/PrismLauncher/blob/develop/CONTRIBUTING.md</url>
+  <url type="homepage">@Launcher_Git@</url>
+  <url type="bugtracker">@Launcher_BUG_TRACKER_URL@</url>
+  <url type="vcs-browser">@Launcher_Git@</url>
   <content_rating type="oars-1.1">
     <content_attribute id="violence-fantasy">moderate</content_attribute>
     <content_attribute id="social-chat">intense</content_attribute>

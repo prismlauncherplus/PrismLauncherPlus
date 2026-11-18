@@ -36,8 +36,8 @@
 #include "MSAStep.h"
 
 #include <QAbstractOAuth2>
-#include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QOAuthHttpServerReplyHandler>
 #include <QOAuthOobReplyHandler>
 
@@ -114,9 +114,9 @@ class LoggingOAuthHttpServerReplyHandler final : public QOAuthHttpServerReplyHan
 MSAStep::MSAStep(AccountData* data, bool silent) : AuthStep(data), m_silent(silent)
 {
     m_clientId = APPLICATION->getMSAClientID();
-    if (QCoreApplication::applicationFilePath().startsWith("/tmp/.mount_") || APPLICATION->isPortable() || !isSchemeHandlerRegistered())
-
-    {
+    // the URL scheme redirect has to be registered for the client ID, see Launcher_MSA_URL_SCHEME_CALLBACK
+    if (!BuildConfig.MSA_URL_SCHEME_CALLBACK || QCoreApplication::applicationFilePath().startsWith("/tmp/.mount_") ||
+        APPLICATION->isPortable() || !isSchemeHandlerRegistered()) {
         auto replyHandler = new LoggingOAuthHttpServerReplyHandler(this);
         replyHandler->setCallbackText(QString(R"XXX(
     <noscript>

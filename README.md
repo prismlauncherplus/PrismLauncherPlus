@@ -2,7 +2,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="/program_info/org.prismlauncher.PrismLauncher.logo-darkmode.svg">
   <source media="(prefers-color-scheme: light)" srcset="/program_info/org.prismlauncher.PrismLauncher.logo.svg">
-  <img alt="Prism Launcher" src="/program_info/org.prismlauncher.PrismLauncher.logo.svg" width="40%">
+  <img alt="Prism Launcher Plus" src="/program_info/org.prismlauncher.PrismLauncher.logo.svg" width="40%">
 </picture>
 </p>
 
@@ -12,7 +12,7 @@
 </p>
 
 > [!WARNING]
-> ### Prism Launcher Plus is not Prism Launcher
+> **Prism Launcher Plus is not Prism Launcher**
 >
 > - This project is **not endorsed, sponsored, maintained or supported** by the Prism Launcher project, its maintainers or its community.
 >   The Prism Launcher name, logo and other brand assets belong to that project and are only used here to identify the upstream project
@@ -48,7 +48,7 @@ branch without conflict.
 | Branched from | upstream `develop` at `50e9321f` ("Remove iOS and OSX icons (#6226)"), the 12.0.0 development line after the 9.4 release |
 | Default branch | `develop` |
 | Size of the diff | 14 commits over 64 files (excluding this README), roughly 5.5k added lines, mostly new files |
-| License | upstream terms, see [License](#license): GPL-3.0-only for the code, CC BY-SA 4.0 for the logo and assets |
+| License | upstream terms, see [LICENSE](LICENSE) and [COPYING.md](COPYING.md): GPL-3.0-only for the code, CC BY-SA 4.0 for the logo and assets |
 | Builds | none are published here; build it yourself (see [Building](#building)) or use upstream Prism Launcher for official builds |
 | Development | the new features were written with AI assistance and reviewed by the maintainer of this fork; upstream code is unchanged in origin |
 
@@ -161,6 +161,41 @@ problem also happens in upstream Prism Launcher. The Prism Launcher Discord, Mat
 only exists in this fork.
 
 ## Installation
+
+### Nix / NixOS
+
+This repository is a Nix flake. Add it as an input and install `prismlauncherplus`:
+
+```nix
+# flake.nix
+inputs.prismlauncherplus = {
+  url = "github:prismlauncherplus/PrismLauncherPlus";
+  inputs.nixpkgs.follows = "nixpkgs"; # optional
+};
+
+# in a NixOS module (or home.packages for Home Manager)
+environment.systemPackages = [ inputs.prismlauncherplus.packages.${pkgs.stdenv.hostPlatform.system}.prismlauncherplus ];
+```
+
+or try it with `nix run github:prismlauncherplus/PrismLauncherPlus`. There is no binary cache, so it is built from source. See
+[nix/README.md](nix/README.md) for the overlay, non-flake usage and package options.
+
+### Identity and data
+
+Prism Launcher Plus can be installed side by side with Prism Launcher:
+
+| | Prism Launcher | Prism Launcher Plus |
+| --- | --- | --- |
+| Executable | `prismlauncher` | `prismlauncherplus` |
+| App ID / desktop entry | `org.prismlauncher.PrismLauncher` | `io.github.prismlauncherplus.PrismLauncherPlus` |
+| Data directory (Linux) | `~/.local/share/PrismLauncher` | `~/.local/share/PrismLauncherPlus` |
+| Config file | `prismlauncher.cfg` | `prismlauncherplus.cfg` |
+| Environment variable prefix | `PRISMLAUNCHER_` | `PRISMLAUNCHERPLUS_` (e.g. `PRISMLAUNCHERPLUS_JAVA_PATHS`, `PRISMLAUNCHERPLUS_DATA_DIR`) |
+
+On first start Prism Launcher Plus offers to **copy** an existing Prism Launcher data directory (instances, accounts, settings, …);
+the original is left untouched. `prismlauncher://` import links are still accepted alongside `prismlauncherplus://`.
+
+### Other platforms
 
 **No builds of Prism Launcher Plus are published.** The following downloads, instructions and badges are Prism Launcher's and install
 upstream Prism Launcher, which does not contain the features described above.

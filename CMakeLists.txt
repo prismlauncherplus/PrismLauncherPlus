@@ -196,7 +196,7 @@ set(Launcher_VERSION_NAME4_COMMA "${Launcher_VERSION_MAJOR},${Launcher_VERSION_M
 set(Launcher_BUILD_PLATFORM "unknown" CACHE STRING "A short string identifying the platform that this build was built for. Only used to display in the about dialog.")
 
 # Github repo URL with releases for updater
-set(Launcher_UPDATER_GITHUB_REPO "https://github.com/PrismLauncher/PrismLauncher" CACHE STRING "Base github URL for the updater.")
+set(Launcher_UPDATER_GITHUB_REPO "https://github.com/prismlauncherplus/PrismLauncherPlus" CACHE STRING "Base github URL for the updater.")
 
 # Name to help updater identify valid artifacts
 set(Launcher_BUILD_ARTIFACT "" CACHE STRING "Artifact name to help the updater identify valid artifacts.")
@@ -208,20 +208,22 @@ set(Launcher_META_URL "https://meta.prismlauncher.org/v1/" CACHE STRING "URL to 
 set(Launcher_IMGUR_CLIENT_ID "5b97b0713fba4a3" CACHE STRING "Client ID you can get from Imgur when you register an application")
 
 # Bug tracker URL
-set(Launcher_BUG_TRACKER_URL "https://github.com/PrismLauncher/PrismLauncher/issues" CACHE STRING "URL for the bug tracker.")
+set(Launcher_BUG_TRACKER_URL "https://github.com/prismlauncherplus/PrismLauncherPlus/issues" CACHE STRING "URL for the bug tracker.")
 
 # Translations Platform URL
 set(Launcher_TRANSLATIONS_URL "https://hosted.weblate.org/projects/prismlauncher/launcher/" CACHE STRING "URL for the translations platform.")
 set(Launcher_TRANSLATION_FILES_URL "https://i18n.prismlauncher.org/" CACHE STRING "URL for the translations files.")
 
 # Matrix Space
-set(Launcher_MATRIX_URL "https://prismlauncher.org/matrix" CACHE STRING "URL to the Matrix Space")
+# Prism Launcher Plus has no community spaces of its own (yet); empty URLs hide the menu entries.
+# Please do not send Prism Launcher Plus users to the upstream Prism Launcher communities for support.
+set(Launcher_MATRIX_URL "" CACHE STRING "URL to the Matrix Space")
 
 # Discord URL
-set(Launcher_DISCORD_URL "https://prismlauncher.org/discord" CACHE STRING "URL for the Discord guild.")
+set(Launcher_DISCORD_URL "" CACHE STRING "URL for the Discord guild.")
 
 # Subreddit URL
-set(Launcher_SUBREDDIT_URL "https://prismlauncher.org/reddit" CACHE STRING "URL for the subreddit.")
+set(Launcher_SUBREDDIT_URL "" CACHE STRING "URL for the subreddit.")
 
 # Builds
 set(Launcher_QT_VERSION_MAJOR "6" CACHE STRING "Major Qt version to build against")
@@ -272,6 +274,10 @@ endif()
 # By using this key in your builds you accept the terms of use laid down in
 # https://docs.microsoft.com/en-us/legal/microsoft-identity-platform/terms-of-use
 set(Launcher_MSA_CLIENT_ID "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb" CACHE STRING "Client ID you can get from Microsoft Identity Platform when you register an application")
+# The URL scheme login redirects to "<Launcher_APP_BINARY_NAME>://oauth/microsoft", which must be registered for the client ID above.
+# Upstream's client ID only allows "prismlauncher://", so Prism Launcher Plus uses the loopback (localhost) redirect by default.
+# Turn this on when building with a client ID that has "prismlauncherplus://oauth/microsoft" registered as a redirect URI.
+option(Launcher_MSA_URL_SCHEME_CALLBACK "Log in to Microsoft through the launcher's URL scheme instead of a localhost redirect" OFF)
 
 # By using this key in your builds you accept the terms and conditions laid down in
 # https://support.curseforge.com/en/support/solutions/articles/9000207405-curse-forge-3rd-party-api-terms-and-conditions
@@ -383,7 +389,7 @@ include(ECMQtDeclareLoggingCategory)
 
 ####################################### Program Info #######################################
 
-set(Launcher_APP_BINARY_NAME "prismlauncher" CACHE STRING "Name of the Launcher binary")
+set(Launcher_APP_BINARY_NAME "prismlauncherplus" CACHE STRING "Name of the Launcher binary")
 add_subdirectory(program_info)
 
 ####################################### Install layout #######################################
@@ -417,8 +423,9 @@ if(UNIX AND APPLE)
     set(MACOSX_BUNDLE_LONG_VERSION_STRING "${Launcher_VERSION_NAME}")
     set(MACOSX_BUNDLE_ICON_FILE ${Launcher_Name}.icns)
     set(MACOSX_BUNDLE_COPYRIGHT "${Launcher_Copyright_Mac}")
-    set(MACOSX_SPARKLE_UPDATE_PUBLIC_KEY "v55ZWWD6QlPoXGV6VLzOTZxZUggWeE51X8cRQyQh6vA=" CACHE STRING "Public key for Sparkle update feed")
-    set(MACOSX_SPARKLE_UPDATE_FEED_URL "https://prismlauncher.org/feed/appcast.xml" CACHE STRING "URL for Sparkle update feed")
+    # Upstream's Sparkle feed would "update" Prism Launcher Plus to Prism Launcher, so it is disabled until Plus has its own feed
+    set(MACOSX_SPARKLE_UPDATE_PUBLIC_KEY "" CACHE STRING "Public key for Sparkle update feed")
+    set(MACOSX_SPARKLE_UPDATE_FEED_URL "" CACHE STRING "URL for Sparkle update feed")
 
     set(MACOSX_SPARKLE_DOWNLOAD_URL "https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz" CACHE STRING "URL to Sparkle release archive")
     set(MACOSX_SPARKLE_SHA256 "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192" CACHE STRING "SHA256 checksum for Sparkle release archive")
@@ -449,10 +456,14 @@ if(UNIX AND APPLE)
         if(XCODE_VERSION VERSION_GREATER_EQUAL 26.0)
             set(ASSETS_OUT_DIR "${CMAKE_BINARY_DIR}/program_info")
             set(GENERATED_ASSETS_CAR "${ASSETS_OUT_DIR}/Assets.car")
-            set(ICON_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_Branding_MAC_ICON}")
+            set(ICON_ORIGINAL "${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_Branding_MAC_ICON}")
+            # actool names the app icon after the .icon file, which keeps its upstream name in the source tree
+            set(ICON_SOURCE "${ASSETS_OUT_DIR}/${Launcher_Name}.icon")
 
             add_custom_command(
                 OUTPUT "${GENERATED_ASSETS_CAR}"
+                COMMAND ${CMAKE_COMMAND} -E rm -rf "${ICON_SOURCE}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${ICON_ORIGINAL}" "${ICON_SOURCE}"
                 COMMAND ${ACTOOL_EXE} "${ICON_SOURCE}"
                         --compile "${ASSETS_OUT_DIR}"
                         --output-partial-info-plist /dev/null
@@ -461,8 +472,8 @@ if(UNIX AND APPLE)
                         --target-device mac
                         --minimum-deployment-target ${CMAKE_OSX_DEPLOYMENT_TARGET}
                         --platform macosx
-                DEPENDS "${ICON_SOURCE}"
-                COMMENT "Compiling asset catalog (${ICON_SOURCE})"
+                DEPENDS "${ICON_ORIGINAL}/icon.json"
+                COMMENT "Compiling asset catalog (${ICON_ORIGINAL})"
                 VERBATIM
             )
             add_custom_target(compile_assets ALL DEPENDS "${GENERATED_ASSETS_CAR}")
@@ -489,7 +500,7 @@ elseif(UNIX)
 
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${Launcher_Desktop} DESTINATION ${KDE_INSTALL_APPDIR})
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${Launcher_MetaInfo} DESTINATION ${KDE_INSTALL_METAINFODIR})
-    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_SVG} DESTINATION "${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps")
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${Launcher_SVG} DESTINATION "${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps")
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${Launcher_PNG_256} DESTINATION "${KDE_INSTALL_ICONDIR}/hicolor/256x256/apps" RENAME "${Launcher_AppID}.png")
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${Launcher_MIMEInfo} DESTINATION ${KDE_INSTALL_MIMEDIR})
 

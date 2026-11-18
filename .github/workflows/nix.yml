@@ -109,11 +109,13 @@ jobs:
           use-flakehub: false
 
         # For in-tree builds
+        # TODO(PrismLauncherPlus): upstream's "prismlauncher" cache is not ours. Set the CACHIX_CACHE_NAME
+        # repository variable (and CACHIX_AUTH_TOKEN secret) once we have our own cache; skipped until then.
       - name: Setup Cachix
-        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.CACHIX_CACHE_NAME != '' }}
         uses: cachix/cachix-action@v17
         with:
-          name: prismlauncher
+          name: ${{ vars.CACHIX_CACHE_NAME }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Run Flake checks
@@ -125,14 +127,19 @@ jobs:
         run: |
           nix build \
             --no-link --print-build-logs --print-out-paths \
-            .#prismlauncher-debug >> "$GITHUB_STEP_SUMMARY"
+            .#prismlauncherplus-debug >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build release package
         if: ${{ env.DEBUG == 'false' }}
         env:
           TAG: ${{ github.ref_name }}
           SYSTEM: ${{ matrix.system }}
+          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
         run: |
-          nix build --no-link --print-out-paths .#prismlauncher \
-            | tee -a "$GITHUB_STEP_SUMMARY" \
-            | xargs cachix pin prismlauncher "$TAG"-"$SYSTEM"
+          nix build --no-link --print-out-paths .#prismlauncherplus \
+            | tee -a "$GITHUB_STEP_SUMMARY" > out-paths.txt
+
+          # Only pin when we have a Cachix cache configured (see "Setup Cachix")
+          if [ -n "$CACHIX_CACHE_NAME" ]; then
+            xargs cachix pin "$CACHIX_CACHE_NAME" "$TAG"-"$SYSTEM" < out-paths.txt
+          fi

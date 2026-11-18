@@ -38,7 +38,7 @@ let
 in
 
 stdenv.mkDerivation {
-  pname = "prismlauncher-unwrapped";
+  pname = "prismlauncherplus-unwrapped";
   version = "12.0-unstable-${date}";
 
   src = lib.fileset.toSource {
@@ -64,7 +64,7 @@ stdenv.mkDerivation {
   # Ensure that instance shortcuts point to our final wrapper, rather than this unwrapped version
   postPatch = ''
     substituteInPlace launcher/minecraft/ShortcutUtils.cpp \
-      --replace-fail 'QApplication::applicationFilePath()' 'QProcessEnvironment::systemEnvironment().value("NIX_LAUNCHER_WRAPPER", "${placeholder "out"}/bin/prismlauncher")'
+      --replace-fail 'QApplication::applicationFilePath()' 'QProcessEnvironment::systemEnvironment().value("NIX_LAUNCHER_WRAPPER", "${placeholder "out"}/bin/prismlauncherplus")'
   '';
 
   nativeBuildInputs = [
@@ -107,19 +107,19 @@ stdenv.mkDerivation {
   dontWrapQtApps = true;
 
   meta = {
-    description = "Free, open source launcher for Minecraft";
+    description = "Unofficial fork of Prism Launcher, a free, open source launcher for Minecraft";
     longDescription = ''
       Allows you to have multiple, separate instances of Minecraft (each with
       their own mods, texture packs, saves, etc) and helps you manage them and
       their associated options with a simple interface.
+
+      Prism Launcher Plus adds bulk instance operations, group-level settings
+      and shared game option profiles on top of Prism Launcher.
     '';
-    homepage = "https://prismlauncher.org/";
+    homepage = "https://github.com/prismlauncherplus/PrismLauncherPlus";
     license = lib.licenses.gpl3Only;
-    maintainers = with lib.maintainers; [
-      Scrumplex
-      getchoo
-    ];
-    mainProgram = "prismlauncher";
+    maintainers = [ ];
+    mainProgram = "prismlauncherplus";
     platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 }

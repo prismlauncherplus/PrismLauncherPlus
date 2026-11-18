@@ -20,7 +20,8 @@ jobs:
 
     # a pr that was a `blocking:<id>` label was merged.
     # find the open pr's it was blocked by and trigger a refresh of their state
-    if: "${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'status: blocking') }}"
+    # Also requires the pull request GitHub App (PULL_REQUEST_APP_ID variable + PULL_REQUEST_APP_PRIVATE_KEY secret)
+    if: "${{ vars.PULL_REQUEST_APP_ID != '' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'status: blocking')) }}"
 
     steps:
       - name: Generate token

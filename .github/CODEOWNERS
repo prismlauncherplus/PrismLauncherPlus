@@ -1,2 +1,3 @@
-# Nix maintainers
-*.nix @getchoo @Scrumplex
+# Upstream Prism Launcher code owners removed for the Prism Launcher Plus fork.
+# TODO(PrismLauncherPlus): add our own maintainers here, e.g.
+# *.nix @someone
