@@ -112,6 +112,9 @@ struct VisualGroup {
     /// the area of the settings button next to the group name, for a header starting at the given height
     QRect settingsButtonRect(int headerTop) const;
 
+    /// where the group name starts in the header, after the arrow and the group icon
+    int headerTextOffset(const QFontMetrics& fontMetrics) const;
+
     /// the width of the group name in the header, which is cut off when it doesn't fit next to the settings button
     int headerTextWidth(const QFontMetrics& fontMetrics) const;
 

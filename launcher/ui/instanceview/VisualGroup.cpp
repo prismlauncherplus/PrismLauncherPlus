@@ -44,7 +44,11 @@
 #include <QtMath>
 #include <utility>
 
+#include "Application.h"
+
+#include "InstanceList.h"
 #include "InstanceView.h"
+#include "icons/IconList.h"
 
 VisualGroup::VisualGroup(QString text, InstanceView* view) : view(view), text(std::move(text)), collapsed(false) {}
 
@@ -151,16 +155,24 @@ QRect VisualGroup::settingsButtonRect(int headerTop) const
     QFont font(QApplication::font());
     font.setBold(true);
     const QFontMetrics fontMetrics(font);
-    const int textOffsetLeft = (fontMetrics.height() / 2 + 7) * 2;
+    const int textOffsetLeft = headerTextOffset(fontMetrics);
     const int size = fontMetrics.height();
     const int left = textOffsetLeft + headerTextWidth(fontMetrics) + 6;
     return QRect(left, headerTop + 7, size, size);
 }
 
+int VisualGroup::headerTextOffset(const QFontMetrics& fontMetrics) const
+{
+    // keep in sync with the layout in drawHeader: arrow, then the optional group icon, then the name
+    const int iconOffsetLeft = (fontMetrics.height() / 2 + 7) * 2;
+    const bool hasIcon = !APPLICATION->instances()->getGroupIconKey(text).isEmpty();
+    return hasIcon ? iconOffsetLeft * 2 - fontMetrics.height() / 2 : iconOffsetLeft;
+}
+
 int VisualGroup::headerTextWidth(const QFontMetrics& fontMetrics) const
 {
     // long names are elided, so the settings button always stays inside the view
-    const int textOffsetLeft = (fontMetrics.height() / 2 + 7) * 2;
+    const int textOffsetLeft = headerTextOffset(fontMetrics);
     int available = view->viewport()->width() - view->m_rightMargin - 7 - textOffsetLeft;
     if (hasSettingsButton()) {
         available -= fontMetrics.height() + 6;
@@ -170,6 +182,9 @@ int VisualGroup::headerTextWidth(const QFontMetrics& fontMetrics) const
 
 void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& option) const
 {
+    const QString& iconKey = APPLICATION->instances()->getGroupIconKey(text);
+    bool hasIcon = !iconKey.isEmpty();
+
     QRect optRect = option.rect;
     optRect.setTop(optRect.top() + 7);
     QFont font(QApplication::font());
@@ -187,8 +202,10 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
 
     // sizes and offsets, to keep things consistent below
     const int arrowOffsetLeft = fontMetrics.height() / 2 + 7;
-    const int textOffsetLeft = arrowOffsetLeft * 2;
+    const int iconOffsetLeft = arrowOffsetLeft * 2;
+    const int textOffsetLeft = headerTextOffset(fontMetrics);
     const int centerHeight = optRect.top() + fontMetrics.height() / 2;
+    const int iconSize = fontMetrics.height() * 1.2;
     const QString textToDraw = text.isEmpty()        ? QObject::tr("Ungrouped")
                                : hasSettingsButton() ? fontMetrics.elidedText(text, Qt::ElideRight, headerTextWidth(fontMetrics))
                                                      : text;
@@ -210,6 +227,23 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
         }
     }
     // END: arrow
+
+    // BEGIN: icon
+    if (hasIcon) {
+        QRect iconRect(optRect);
+
+        iconRect.setTop(iconRect.top());
+        iconRect.setLeft(iconOffsetLeft);
+        iconRect.setHeight(iconSize);
+        iconRect.setWidth(iconSize);
+
+        iconRect.moveLeft(iconOffsetLeft);
+        iconRect.moveTop(centerHeight - iconSize / 2);
+
+        QIcon icon = APPLICATION->icons()->getIcon(iconKey);
+        icon.paint(painter, iconRect, Qt::AlignLeft | Qt::AlignVCenter);
+    }
+    // END: icon
 
     // BEGIN: text
     {
@@ -244,7 +278,8 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
         painter->setPen(pen);
         // startPoint is left + arrow + text + space
         const int startPoint = optRect.left() + fontMetrics.height() +
-                               fontMetrics.size(Qt::AlignLeft | Qt::AlignVCenter, textToDraw).width() + 20 + settingsButtonWidth;
+                               fontMetrics.size(Qt::AlignLeft | Qt::AlignVCenter, textToDraw).width() + 20 + settingsButtonWidth +
+                               (hasIcon ? iconSize + 3 : 0);
         painter->setRenderHint(QPainter::Antialiasing, false);
         QPolygon polygon;
         // for some reason the height (yPos) doesn't look centered, so we are adding 1 to the center height

@@ -36,7 +36,6 @@
  */
 
 #pragma once
-#include <cassert>
 
 #include <QDataStream>
 #include <QDateTime>
@@ -45,21 +44,22 @@
 #include <QObject>
 #include <QProcess>
 #include <QSet>
+#include <cassert>
 #include <cstdint>
 #include <functional>
+
 #include "QObjectPtr.h"
-
-#include "settings/SettingsObject.h"
-
-#include "minecraft/auth/MinecraftAccount.h"
-
 #include "RuntimeContext.h"
+#include "minecraft/auth/MinecraftAccount.h"
 #include "minecraft/launch/MinecraftTarget.h"
+#include "settings/SettingsObject.h"
+#include "tasks/Task.h"
 
-class QDir;
-class Task;
-class LaunchTask;
 class BaseInstance;
+class InstanceWindow;
+class LaunchTask;
+class LaunchController;
+class QDir;
 
 /// Shortcut saving target representations
 enum class ShortcutTarget : std::uint8_t { Desktop, Applications, Other };
@@ -96,8 +96,7 @@ class BaseInstance : public QObject {
     };
 
    public:
-    /// virtual destructor to make sure the destruction is COMPLETE
-    ~BaseInstance() override = default;
+    ~BaseInstance() override;
 
     virtual void saveNow() = 0;
 
@@ -217,6 +216,14 @@ class BaseInstance : public QObject {
     /// returns the current launch task (if any)
     LaunchTask* getLaunchTask();
 
+    LaunchController* launchController() { return m_launchController.get(); }
+
+    void setLaunchController(std::unique_ptr<LaunchController> controller);
+
+    InstanceWindow* window() { return m_window; }
+
+    void setWindow(InstanceWindow* window) { m_window = window; }
+
     /*!
      * Create envrironment variables for running the instance
      */
@@ -326,6 +333,9 @@ class BaseInstance : public QObject {
     SettingsObject* m_globalSettings;
     GroupSettingsLookup m_groupSettingsLookup;
     bool m_specificSettingsLoaded = false;
+
+    std::unique_ptr<LaunchController> m_launchController;
+    InstanceWindow* m_window = nullptr;
 };
 
 Q_DECLARE_METATYPE(shared_qobject_ptr<BaseInstance>)

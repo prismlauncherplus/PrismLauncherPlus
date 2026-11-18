@@ -36,10 +36,12 @@
 
 #pragma once
 
+#include <QMap>
 #include <QWidget>
 #include "JavaCommon.h"
 
 class MinecraftInstance;
+class QLineEdit;
 class SettingsObject;
 
 namespace Ui {
@@ -63,15 +65,20 @@ class JavaSettingsWidget : public QWidget {
     void onJavaBrowse();
     void onJavaAutodetect();
     void onJavaTest();
+    void onJavaBrowseMajor(int major);
+    void onJavaDetectMajor(int major);
     void updateThresholds();
 
    private:
     /// instances and groups only override parts of the global settings
     bool isOverrideMode() const { return m_instance != nullptr || m_groupSettings != nullptr; }
     SettingsObject* settings() const;
+    void setupPinnedJavaRows();
+    void warnAboutUnresolvablePinnedPaths() const;
 
     MinecraftInstance* m_instance;
     SettingsObject* m_groupSettings;
     Ui::JavaSettingsWidget* m_ui;
     unique_qobject_ptr<JavaCommon::TestCheck> m_checker;
+    QMap<int, QLineEdit*> m_pinnedJavaEdits;
 };
