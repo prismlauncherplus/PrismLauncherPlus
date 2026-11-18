@@ -1,8 +1,26 @@
 # Contributions Guidelines
 
+These are the contribution guidelines of Prism Launcher Plus, an unofficial fork of Prism Launcher. They are based on upstream's guidelines.
+
 ## Foreword on AI usage
 
-Our team believes in **human contributions**. Any contribution - be it an issue report or a pull request - which is created by, documented by, or aided by AI/LLM usage will typically be **closed and locked without further discussion**.
+Unlike upstream Prism Launcher, **Prism Launcher Plus accepts contributions that were created or aided by AI/LLM tools**, such as
+issue reports, pull requests, code, tests and documentation. Much of this fork was written with AI assistance.
+
+The same quality bar applies to every contribution, however it was made:
+
+- **You are responsible for what you submit.** Read, understand and review all AI-generated code before opening a pull request, and be
+  ready to explain and change it during review. "The AI wrote it" is not an answer to a review question.
+- **Build and test it.** Make sure the project builds, the tests pass (`ctest`) and the change actually works in the launcher.
+- **Mention AI usage in the pull request description** (which tools, and for what), so reviewers know what to look at more closely.
+  A `Co-Authored-By:` trailer naming the tool is welcome.
+- **Keep it focused.** Large, unrelated or speculative AI-generated changes are hard to review and will be asked to be split up.
+- **Your sign-off still matters.** The [Developer's Certificate of Origin](#signing-your-work) is a statement *you* make: only sign off
+  work you have the right to submit under this project's licenses.
+- **Do not send AI-assisted changes to upstream.** Prism Launcher closes AI-aided contributions. If you want to upstream something from
+  this fork, it has to meet [Prism Launcher's own guidelines](https://github.com/PrismLauncher/PrismLauncher/blob/develop/CONTRIBUTING.md).
+
+Instructions for AI coding agents working in this repository are in [CLAUDE.md](CLAUDE.md) (also referenced by `AGENTS.md`).
 
 ## Code style
 
@@ -117,6 +135,6 @@ As a bonus, you can also [cryptographically sign your commits][gh-signing-commit
 
 ## Backporting to Release Branches
 
-We use [automated backports](https://github.com/PrismLauncher/PrismLauncher/blob/develop/.github/workflows/backport.yml) to merge specific contributions from develop into `release` branches.
+We use [automated backports](.github/workflows/backport.yml) to merge specific contributions from develop into `release` branches.
 
 This is done when pull requests are merged and have labels such as `backport release-7.x` - which should be added along with the milestone for the release.
